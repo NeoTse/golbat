@@ -1,6 +1,7 @@
 package golbat
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -15,6 +16,7 @@ var option Options = Options{
 	MemTableSize:  256,
 	MaxBatchSize:  128,
 	MaxBatchCount: 10,
+	Comparator:    bytes.Compare,
 }
 
 func TestNewMemTable(t *testing.T) {
@@ -50,8 +52,12 @@ func TestPutRecordsAndRestore(t *testing.T) {
 	esz := 3 + len(e.key) + len(e.value)
 
 	n := option.MemTableSize/esz + 1
+	ev := EValue{
+		Value: e.value,
+		Meta:  e.rtype,
+	}
 	for i := 0; i < n; i++ {
-		mt.Put(e)
+		mt.Put(e.key, ev)
 	}
 
 	mt.SyncWAL()

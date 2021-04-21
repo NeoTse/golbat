@@ -13,14 +13,24 @@ type CompressionType uint32
 
 const (
 	// WARNING: DON'T change the existing entries!
-	kNoCompression CompressionType = iota
-	kSnappyCompression
+	NoCompression CompressionType = iota
+	SnappyCompression
+	ZSTDCompression
+)
+
+type ChecksumVerificationMode uint32
+
+const (
+	// WARNING: DON'T change the existing entries!
+	NoChecksum ChecksumVerificationMode = iota
+	OnTableRead
+	OnBlockRead
+	OnTableAndBlockRead
 )
 
 var (
 	DefaultReadOptions  = &ReadOptions{VerifyCheckSum: false, FillCache: true, Snapshot: nil}
 	DefaultWriteOptions = &WriteOptions{Sync: false}
-	DefaultOptions      = &Options{Comparator: nil, CompressionType: kSnappyCompression}
 )
 
 type Option func(*Options)
@@ -29,14 +39,26 @@ type Option func(*Options)
 // Each option X can be setted with WithX method.
 type Options struct {
 	Dir             string
-	Comparator      *Comparator
 	CompressionType CompressionType
+	Comparator      func([]byte, []byte) int
 	NumGoroutines   int
 	// Logger
 
 	MemTableSize  int
 	MaxBatchSize  int
 	MaxBatchCount int
+
+	ValueLogDir        string
+	ValueLogFileSize   int
+	ValueLogMaxEntries int
+	ValueThreshold     int
+
+	BlockSize int
+	TableSize int
+	checkMode ChecksumVerificationMode
+
+	BloomFalsePositive   float64
+	ZSTDCompressionLevel int
 }
 
 type ReadOptions struct {
@@ -47,14 +69,6 @@ type ReadOptions struct {
 
 type WriteOptions struct {
 	Sync bool
-}
-
-func NewOptions(options ...Option) (*Options, error) {
-	res := *DefaultOptions
-	for _, option := range options {
-		option(&res)
-	}
-	return &res, nil
 }
 
 func NumGoroutines(n int) Option {

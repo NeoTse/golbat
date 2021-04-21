@@ -13,10 +13,8 @@ import (
 	"github.com/golbat/internel"
 )
 
-type RecordType byte
-
 const (
-	Value RecordType = 1 << iota
+	Value byte = 1 << iota
 	Delete
 	ValPtr
 )
@@ -99,7 +97,7 @@ type entry struct {
 
 	offset uint32
 	hlen   uint16
-	rtype  RecordType
+	rtype  byte
 }
 
 func (e *entry) estimateSize(threshold uint32) uint32 {
@@ -115,11 +113,11 @@ func (e *entry) checkWithThreshold(threshold uint32) bool {
 	return len(e.value) < int(threshold)
 }
 
-func (e *entry) withType(t RecordType) {
+func (e *entry) withType(t byte) {
 	e.rtype |= t
 }
 
-func (e *entry) resetType(t RecordType) {
+func (e *entry) resetType(t byte) {
 	e.rtype = t
 }
 
@@ -169,7 +167,7 @@ func (r *entryReader) read(reader io.Reader) (*entry, error) {
 	if crc != hash.Sum32() {
 		return nil, ErrTruncating
 	}
-	e.rtype = RecordType(h.recordType)
+	e.rtype = h.recordType
 
 	r.offset += uint32(esz)
 
@@ -207,12 +205,11 @@ type logFile struct {
 
 	path string
 	lock sync.RWMutex
-	buf  *bytes.Buffer
 
 	*internel.MmapFile
 }
 
-func (f *logFile) open(path string, flags int, size int, buf *bytes.Buffer) error {
+func (f *logFile) Open(path string, flags int, size int) error {
 	mmf, err := internel.OpenMmapFile(path, flags, size)
 
 	if err != nil {
@@ -221,7 +218,6 @@ func (f *logFile) open(path string, flags int, size int, buf *bytes.Buffer) erro
 
 	f.MmapFile = mmf
 	f.size = uint32(len(f.Data))
-	f.buf = buf
 	if mmf.NewFile {
 		f.size = 0
 		f.clearEntryHeader()
@@ -230,7 +226,7 @@ func (f *logFile) open(path string, flags int, size int, buf *bytes.Buffer) erro
 	return nil
 }
 
-func (f *logFile) truncate(end int64) error {
+func (f *logFile) Truncate(end int64) error {
 	if fs, err := f.Fd.Stat(); err != nil {
 		return Wrapf(err, "while get stat from file: %s", f.path)
 	} else if fs.Size() == end {
@@ -241,7 +237,7 @@ func (f *logFile) truncate(end int64) error {
 	return f.MmapFile.Truncate(end)
 }
 
-func (f *logFile) encodeEntry(e *entry) (uint32, error) {
+func (f *logFile) EncodeEntryTo(e *entry, buf *bytes.Buffer) (uint32, error) {
 	h := header{
 		klen:       uint32(len(e.key)),
 		vlen:       uint32(len(e.value)),
@@ -249,7 +245,7 @@ func (f *logFile) encodeEntry(e *entry) (uint32, error) {
 	}
 
 	hash := crc32.New(internel.CastagnoliCrcTable)
-	writer := io.MultiWriter(f.buf, hash)
+	writer := io.MultiWriter(buf, hash)
 
 	// encode header
 	var headerBuf [maxHeaderSize]byte
@@ -268,22 +264,35 @@ func (f *logFile) encodeEntry(e *entry) (uint32, error) {
 	return uint32(sz + len(e.key) + len(e.value) + crc32.Size), nil
 }
 
-func (f *logFile) writeEntry(e *entry) error {
-	n, err := f.encodeEntry(e)
-
-	if err != nil {
-		return nil
+func (f *logFile) WriteEntry(e *entry, buf *bytes.Buffer) error {
+	buf.Reset()
+	if _, err := f.EncodeEntryTo(e, buf); err != nil {
+		return err
 	}
 
-	AssertTrue(int(n) == copy(f.Data[f.pos:], f.buf.Bytes()))
-	f.pos += n
-	f.clearEntryHeader()
-	f.buf.Reset()
+	return f.WriteEntryFrom(buf)
+}
+
+func (f *logFile) WriteEntryFrom(buf *bytes.Buffer) error {
+	n := buf.Len()
+
+	newPos := atomic.AddUint32(&f.pos, uint32(n))
+	if int(newPos) >= len(f.Data) {
+		if err := f.Truncate(int64(newPos)); err != nil {
+			return err
+		}
+	}
+
+	start := int(newPos) - n
+
+	AssertTrue(int(n) == copy(f.Data[start:], buf.Bytes()))
+	atomic.AddUint32(&f.size, uint32(n))
+	buf.Reset()
 
 	return nil
 }
 
-func (f *logFile) readEntry(buf []byte, offset uint32) (*entry, error) {
+func (f *logFile) ReadEntry(buf []byte, offset uint32) (*entry, error) {
 	var h header
 	hSize := h.Decode(buf)
 	kv := buf[hSize:]
@@ -291,7 +300,7 @@ func (f *logFile) readEntry(buf []byte, offset uint32) (*entry, error) {
 	e := &entry{
 		key:    kv[:h.klen],
 		value:  kv[h.klen : h.klen+h.vlen],
-		rtype:  RecordType(h.recordType),
+		rtype:  h.recordType,
 		offset: offset,
 		hlen:   uint16(hSize),
 	}
@@ -353,7 +362,7 @@ func (f *logFile) readWithValPtr(p valPtr) (buf []byte, err error) {
 	return buf, err
 }
 
-func (f *logFile) flush(offset uint32) error {
+func (f *logFile) Flush(offset uint32) error {
 	if err := f.Sync(); err != nil {
 		return Wrapf(err, "sync file: %s", f.path)
 	}
@@ -361,7 +370,7 @@ func (f *logFile) flush(offset uint32) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if err := f.truncate(int64(offset)); err != nil {
+	if err := f.Truncate(int64(offset)); err != nil {
 		return err
 	}
 

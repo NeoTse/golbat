@@ -11,6 +11,8 @@ var (
 	ErrStopIteration = errors.New("stop iteration")
 	ErrBadWAL        = errors.New(
 		"WAL log is broken, need to be truncated that might cause data loss")
+	ErrChecksumMismatch = errors.New("checksum mismatch")
+	ErrCompressionType  = errors.New("Unsupported compression type")
 )
 
 func Check(err error) {
@@ -39,7 +41,7 @@ func Wrap(err error, msg string) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%s err: %+v", msg, err)
+	return fmt.Errorf("%s error: %+v", msg, err)
 }
 
 func Wrapf(err error, format string, args ...interface{}) error {

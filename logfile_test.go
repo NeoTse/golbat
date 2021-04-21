@@ -80,7 +80,7 @@ func TestLogFile(t *testing.T) {
 	f, _ := ioutil.TempFile(dir, "logfile")
 	var log logFile
 	buf := &bytes.Buffer{}
-	log.open(f.Name(), os.O_CREATE|os.O_RDWR, logSize, buf)
+	log.Open(f.Name(), os.O_CREATE|os.O_RDWR, logSize)
 	defer log.Close()
 
 	const k = "key1"
@@ -92,10 +92,11 @@ func TestLogFile(t *testing.T) {
 		value: []byte(v),
 		rtype: Value,
 	}
-	log.writeEntry(e)
+
+	log.WriteEntry(e, buf)
 
 	// read back
-	e2, _ := log.readEntry(log.Data, 0)
+	e2, _ := log.ReadEntry(log.Data, 0)
 	require.EqualValues(t, k, string(e2.key))
 	require.EqualValues(t, v, string(e2.value))
 	require.EqualValues(t, Value, e2.rtype)
@@ -104,7 +105,7 @@ func TestLogFile(t *testing.T) {
 	sz := log.pos
 	end := sz * 101
 	for i := 0; i < 100; i++ {
-		log.writeEntry(e)
+		log.WriteEntry(e, buf)
 	}
 	require.Equal(t, end, log.pos)
 
@@ -123,7 +124,7 @@ func TestLogFile(t *testing.T) {
 	require.Nil(t, err)
 
 	// flush
-	log.flush(end)
+	log.Flush(end)
 	fs, _ := f.Stat()
 	require.True(t, fs.Size() >= int64(end))
 
@@ -135,7 +136,7 @@ func TestLogFile(t *testing.T) {
 	}
 	bs, err := log.readWithValPtr(vp)
 	require.Nil(t, err)
-	e3, _ := log.readEntry(bs, 0)
+	e3, _ := log.ReadEntry(bs, 0)
 	require.EqualValues(t, e2, e3)
 
 	vp.offset = end

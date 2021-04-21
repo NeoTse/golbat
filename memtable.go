@@ -36,7 +36,7 @@ func NewMemTable(id int, option Options) (*memTable, error) {
 
 func OpenMemTable(fid, flags int, option Options) (*memTable, error) {
 	filePath := memTableFilePath(option.Dir, fid)
-	skl := internel.NewSkiplist(arenaSize(option))
+	skl := internel.NewSkiplist(arenaSize(option), option.Comparator)
 	mt := &memTable{
 		skl:    skl,
 		option: option,
@@ -48,7 +48,7 @@ func OpenMemTable(fid, flags int, option Options) (*memTable, error) {
 		path: filePath,
 	}
 
-	err := mt.wal.open(filePath, flags, 2*option.MemTableSize, mt.buf)
+	err := mt.wal.Open(filePath, flags, 2*option.MemTableSize)
 	if err != nil {
 		return nil, Wrapf(err, "while opening memtable: %s", filePath)
 	}
@@ -68,17 +68,19 @@ func OpenMemTable(fid, flags int, option Options) (*memTable, error) {
 	return mt, Wrap(err, "while restore from wal file")
 }
 
-func (m *memTable) Put(entry *entry) error {
-	if err := m.wal.writeEntry(entry); err != nil {
+func (m *memTable) Put(key []byte, value EValue) error {
+	e := &entry{
+		key:   key,
+		value: value.Value,
+		rtype: value.Meta,
+	}
+
+	// TODO may be cause a concurrent writes problem, because use a common buf
+	if err := m.wal.WriteEntry(e, m.buf); err != nil {
 		return Wrap(err, "cannot write entry to WAL file")
 	}
 
-	ev := internel.EValue{
-		Tag:   byte(entry.rtype),
-		Value: entry.value,
-	}
-
-	m.skl.Put(entry.key, ev.Encode())
+	m.skl.Put(key, value.Encode())
 
 	return nil
 }
@@ -114,13 +116,13 @@ func (m *memTable) restoreFromWAL() error {
 		return Wrapf(err, "while restore memtable from wal: %s", m.wal.Fd.Name())
 	}
 
-	return m.wal.truncate(int64(end))
+	return m.wal.Truncate(int64(end))
 }
 
 func (m *memTable) restore() walker {
 	return func(e *entry, _ valPtr) error {
-		ev := internel.EValue{
-			Tag:   byte(e.rtype),
+		ev := EValue{
+			Meta:  byte(e.rtype),
 			Value: e.value,
 		}
 

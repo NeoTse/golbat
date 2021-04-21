@@ -1,17 +1,15 @@
 package internel
 
 import (
-	"bytes"
+	"encoding/binary"
 	"hash"
 	"hash/crc32"
 	"io"
-	"strconv"
-	_ "unsafe"
+	"reflect"
+	"unsafe"
 )
 
 var CastagnoliCrcTable = crc32.MakeTable(crc32.Castagnoli)
-
-const signedByteMax = 128
 
 type HashReader struct {
 	r io.Reader
@@ -57,30 +55,6 @@ func (t *HashReader) BytesRead() int {
 	return t.bytesRead
 }
 
-type EValue struct {
-	Tag   byte
-	Value []byte
-}
-
-func (ev *EValue) Decode(b []byte) {
-	ev.Tag = b[0]
-	ev.Value = b[1:]
-}
-
-func (ev *EValue) Encode() []byte {
-	sz := 1 + len(ev.Value)
-	b := make([]byte, sz)
-	b[0] = ev.Tag
-	copy(b[1:], ev.Value)
-
-	return b
-}
-
-func (ev *EValue) EncodeTo(buf *bytes.Buffer) {
-	buf.WriteByte(ev.Tag)
-	buf.Write(ev.Value)
-}
-
 func Min(a, b int) int {
 	if a <= b {
 		return a
@@ -97,76 +71,86 @@ func Max(a, b int) int {
 	return b
 }
 
-func DecodeFixed32(s []byte) uint32 {
-	checkLen(s, 4)
-
-	return uint32(s[0]) |
-		uint32(s[1])<<8 |
-		uint32(s[2])<<16 |
-		uint32(s[3])<<24
+// U32ToBytes converts the given Uint32 to bytes
+func U32ToBytes(v uint32) []byte {
+	var uBuf [4]byte
+	binary.BigEndian.PutUint32(uBuf[:], v)
+	return uBuf[:]
 }
 
-func EncodeFixed32(dst []byte, i uint32) {
-	checkLen(dst, 4)
-
-	dst[0] = byte(i)
-	dst[1] = byte(i >> 8)
-	dst[2] = byte(i >> 16)
-	dst[3] = byte(i >> 24)
+// BytesToU32 converts the given byte slice to uint32
+func BytesToU32(b []byte) uint32 {
+	return binary.BigEndian.Uint32(b)
 }
 
-func EncodeVarint32(i uint32) []byte {
-	res := make([]byte, 0, 5)
-
-	for k := 0; i >= signedByteMax; k++ {
-		res[k] = byte(i | signedByteMax)
-		i >>= 7
+// U32SliceToBytes converts the given Uint32 slice to byte slice
+func U32SliceToBytes(u32s []uint32) []byte {
+	if len(u32s) == 0 {
+		return nil
 	}
-
-	return res
+	var b []byte
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	hdr.Len = len(u32s) * 4
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&u32s[0]))
+	return b
 }
 
-func DecodeFixed64(s []byte) uint64 {
-	checkLen(s, 8)
-
-	return uint64(s[0]) |
-		uint64(s[1])<<8 |
-		uint64(s[2])<<16 |
-		uint64(s[3])<<24 |
-		uint64(s[4])<<32 |
-		uint64(s[5])<<40 |
-		uint64(s[6])<<48 |
-		uint64(s[7])<<56
-}
-
-func EnCodeFixed64(dst []byte, i uint64) {
-	checkLen(dst, 8)
-
-	dst[0] = byte(i)
-	dst[1] = byte(i >> 8)
-	dst[2] = byte(i >> 16)
-	dst[3] = byte(i >> 24)
-	dst[4] = byte(i >> 32)
-	dst[5] = byte(i >> 40)
-	dst[6] = byte(i >> 48)
-	dst[7] = byte(i >> 56)
-}
-
-func EncodeVarint64(i uint64) []byte {
-	res := make([]byte, 0, 10)
-
-	for k := 0; i >= signedByteMax; k++ {
-		res[k] = byte(i | signedByteMax)
-		i >>= 7
+// BytesToU32Slice converts the given byte slice to uint32 slice
+func BytesToU32Slice(b []byte) []uint32 {
+	if len(b) == 0 {
+		return nil
 	}
-
-	return res
+	var u32s []uint32
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u32s))
+	hdr.Len = len(b) / 4
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
+	return u32s
 }
 
-func checkLen(s []byte, atLeast int) {
-	if len(s) < atLeast {
-		panic("Bad slice with length less than " + strconv.Itoa(atLeast))
+// U64ToBytes converts the given Uint64 to bytes
+func U64ToBytes(v uint64) []byte {
+	var uBuf [8]byte
+	binary.BigEndian.PutUint64(uBuf[:], v)
+	return uBuf[:]
+}
+
+// BytesToU64 converts the given byte slice to uint64
+func BytesToU64(b []byte) uint64 {
+	return binary.BigEndian.Uint64(b)
+}
+
+// U64SliceToBytes converts the given Uint64 slice to byte slice
+func U64SliceToBytes(u64s []uint64) []byte {
+	if len(u64s) == 0 {
+		return nil
 	}
+	var b []byte
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	hdr.Len = len(u64s) * 8
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&u64s[0]))
+	return b
+}
+
+// BytesToU64Slice converts the given byte slice to uint64 slice
+func BytesToU64Slice(b []byte) []uint64 {
+	if len(b) == 0 {
+		return nil
+	}
+	var u64s []uint64
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u64s))
+	hdr.Len = len(b) / 8
+	hdr.Cap = hdr.Len
+	hdr.Data = uintptr(unsafe.Pointer(&b[0]))
+	return u64s
+}
+
+func VerifyCheckSum(data []byte, checksum []byte) bool {
+	actual := crc32.Checksum(data, CastagnoliCrcTable)
+	expected := BytesToU32(checksum)
+	return actual == expected
 }
 
 //go:linkname FastRand runtime.fastrand

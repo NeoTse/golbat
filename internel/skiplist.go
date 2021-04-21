@@ -11,21 +11,32 @@ const (
 )
 
 type CloseHandler func()
+type Comparator func([]byte, []byte) int
 
 type Skiplist struct {
 	head  *node
 	arena *Arena
 
-	height  int32
-	ref     int32
-	Hanlder CloseHandler
+	height     int32
+	ref        int32
+	Hanlder    CloseHandler
+	comparator Comparator
 }
 
-func NewSkiplist(arenaSize uint32) *Skiplist {
+func NewSkiplist(arenaSize uint32, cmp Comparator) *Skiplist {
+	if cmp == nil {
+		panic("Unset the comparator for Skiplist!")
+	}
+
 	arena := NewArena(arenaSize)
 	head := newNode(arena, nil, nil, maxHeight)
 
-	return &Skiplist{head: head, arena: arena, height: 1, ref: 1}
+	return &Skiplist{head: head,
+		arena:      arena,
+		height:     1,
+		ref:        1,
+		comparator: cmp,
+	}
 }
 
 func (s *Skiplist) Put(key, value []byte) {
@@ -142,7 +153,8 @@ func (s *Skiplist) getSplices(key []byte, from *node, level int) (*node, *node) 
 			return from, next
 		}
 
-		c := bytes.Compare(next.key(s.arena), key)
+		nextKey := next.key(s.arena)
+		c := s.comparator(nextKey, key)
 
 		if c < 0 {
 			from = next

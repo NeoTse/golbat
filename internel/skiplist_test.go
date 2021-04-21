@@ -1,6 +1,7 @@
 package internel
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math/rand"
@@ -45,10 +46,14 @@ func random(rnd *rand.Rand) []byte {
 	return res
 }
 
+func comparator(a, b []byte) int {
+	return bytes.Compare(a, b)
+}
+
 // TestEmpty tests a empty skiplist
 func TestEmpty(t *testing.T) {
 	key := []byte("test")
-	skl := NewSkiplist(size)
+	skl := NewSkiplist(size, comparator)
 
 	require.True(t, skl.getHeight() == 1)
 	require.True(t, skl.Get(key) == nil)
@@ -80,7 +85,7 @@ func TestEmpty(t *testing.T) {
 
 // TestFindOperations tests findLast, findLessThan and findGreatOrEqual
 func TestFindOperations(t *testing.T) {
-	skl := NewSkiplist(size)
+	skl := NewSkiplist(size, comparator)
 
 	// clear, gc
 	defer skl.Deref()
@@ -130,7 +135,7 @@ func TestFindOperations(t *testing.T) {
 
 // TestIterator tests SeekToFirst(), SeekToLast(), Seek(), Next() and Prev()
 func TestIterator(t *testing.T) {
-	skl := NewSkiplist(size)
+	skl := NewSkiplist(size, comparator)
 	defer skl.Deref()
 
 	iter := skl.Iterator()
@@ -202,7 +207,7 @@ func TestIterator(t *testing.T) {
 
 // TestSequential test a single thread puts, updates and gets
 func TestSequential(t *testing.T) {
-	skl := NewSkiplist(size)
+	skl := NewSkiplist(size, comparator)
 
 	k1 := getBytes(1, 5)
 	k2 := getBytes(2, 5)
@@ -250,7 +255,7 @@ func TestConcurrent(t *testing.T) {
 	const n = 1000
 	var wg sync.WaitGroup
 
-	skl := NewSkiplist(size)
+	skl := NewSkiplist(size, comparator)
 	defer skl.Deref()
 
 	// concurrent writes
@@ -280,7 +285,7 @@ func TestConcurrent(t *testing.T) {
 
 // BenchmarkWrites tests the performance of concurrent writes
 func BenchmarkWrites(b *testing.B) {
-	skl := NewSkiplist(uint32((b.N + 1) * maxNodeSize))
+	skl := NewSkiplist(uint32((b.N+1)*MaxNodeSize), comparator)
 	defer skl.Deref()
 
 	b.ResetTimer()
@@ -299,7 +304,7 @@ func BenchmarkReadWrite(b *testing.B) {
 		writeFrac := float64(i) / 10.0
 
 		b.Run(fmt.Sprintf("wfrac_%d", i), func(b *testing.B) {
-			skl := NewSkiplist(uint32((b.N + 1) * maxNodeSize))
+			skl := NewSkiplist(uint32((b.N+1)*MaxNodeSize), comparator)
 			defer skl.Deref()
 
 			b.ResetTimer()
