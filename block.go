@@ -347,6 +347,15 @@ func (iter *blockIterator) Prev() {
 	iter.readEntryById(iter.curEntryId - 1)
 }
 
+func (iter *blockIterator) Key() []byte {
+	return iter.key
+}
+
+func (iter *blockIterator) Value() (ret EValue) {
+	ret.Decode(iter.value)
+	return
+}
+
 func (iter *blockIterator) Error() error {
 	return iter.err
 }
