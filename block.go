@@ -1,8 +1,12 @@
 package golbat
 
 import (
+	"bytes"
+	"fmt"
 	"hash/crc32"
+	"io"
 	"math"
+	"sort"
 	"sync/atomic"
 	"unsafe"
 
@@ -56,7 +60,6 @@ func (fb *fileBlocks) Copy(dst []byte) int {
 
 	written += copy(dst[written:], fb.checksum)
 	written += copy(dst[written:], internel.U32ToBytes(uint32(len(fb.checksum))))
-	written += 4
 
 	return written
 }
@@ -265,4 +268,148 @@ func (b *blockBuilder) diff(nKey []byte) []byte {
 	}
 
 	return nKey[i:]
+}
+
+type blockIterator struct {
+	curBlock     *memBlock
+	tableId      int
+	blockId      int
+	curEntryId   int
+	data         []byte
+	baseKey      []byte
+	key          []byte
+	value        []byte
+	entryOffsets []uint32
+
+	err     error
+	overlap uint16 // the overlap of the previous key with the base key.
+}
+
+func NewBlockIterator(b *memBlock, tid, bid int) *blockIterator {
+	iter := blockIterator{
+		curBlock: b,
+		tableId:  tid,
+		blockId:  bid,
+	}
+
+	iter.data = b.data[:b.entriesIndexStart]
+	iter.entryOffsets = b.entryOffsets
+
+	return &iter
+}
+
+type seekMode int
+
+const (
+	restart seekMode = iota
+	current
+)
+
+// Seek the first entry that is >= input key from start
+func (iter *blockIterator) Seek(key []byte) {
+	iter.seekFrom(key, restart)
+}
+
+// Seek the first entry that is >= input key from pos (may be start or last pos)
+func (iter *blockIterator) seekFrom(key []byte, mode seekMode) {
+	iter.err = nil
+	start := 0
+	if mode != restart {
+		start = iter.curEntryId
+	}
+
+	// find the first key of entry that equal or greater than input key
+	found := sort.Search(len(iter.entryOffsets), func(i int) bool {
+		if i < start {
+			return false
+		}
+
+		iter.readEntryById(i)
+		return compareKeys(iter.key, key) >= 0
+	})
+
+	iter.readEntryById(found)
+}
+
+func (iter *blockIterator) SeekToFirst() {
+	iter.readEntryById(0)
+}
+
+func (iter *blockIterator) SeekToLast() {
+	iter.readEntryById(len(iter.entryOffsets) - 1)
+}
+
+func (iter *blockIterator) Next() {
+	iter.readEntryById(iter.curEntryId + 1)
+}
+
+func (iter *blockIterator) Prev() {
+	iter.readEntryById(iter.curEntryId - 1)
+}
+
+func (iter *blockIterator) Error() error {
+	return iter.err
+}
+
+func (iter *blockIterator) Close() {
+	iter.curBlock.decrRef()
+}
+
+func (iter *blockIterator) Valid() bool {
+	return iter.curBlock != nil && iter.err == nil
+}
+
+func (iter *blockIterator) readEntryById(eid int) {
+	iter.curEntryId = eid
+	if eid >= len(iter.entryOffsets) || eid < 0 {
+		iter.err = io.EOF
+		return
+	}
+
+	iter.err = nil
+	// lazy init the block baseKey
+	if len(iter.baseKey) == 0 {
+		var header fileEntryHeader
+		header.Decode(iter.data)
+		iter.baseKey = iter.data[fileEntryHeaderSize : fileEntryHeaderSize+header.diff]
+	}
+
+	startOffset := int(iter.entryOffsets[eid])
+	endOffset := len(iter.data)
+	// eid points to the last entry in the block.
+	if eid+1 < len(iter.entryOffsets) {
+		// eid point to some entry other than the last one in the block.
+		// EndOffset of the current entry is the start offset of the next entry.
+		endOffset = int(iter.entryOffsets[eid+1])
+	}
+
+	// just for debug
+	defer func() {
+		if r := recover(); r != nil {
+			var debugBuf bytes.Buffer
+			fmt.Fprintf(&debugBuf, "==== Recovered====\n")
+			fmt.Fprintf(&debugBuf, "Table ID: %d\nBlock ID: %d\nEntry Idx: %d\nData len: %d\n"+
+				"StartOffset: %d\nEndOffset: %d\nEntryOffsets len: %d\nEntryOffsets: %v\n",
+				iter.tableId, iter.blockId, iter.curEntryId, len(iter.data),
+				startOffset, endOffset, len(iter.entryOffsets), iter.entryOffsets)
+			panic(debugBuf.String())
+		}
+	}()
+
+	entryData := iter.data[startOffset:endOffset]
+	var header fileEntryHeader
+	header.Decode(entryData)
+	// optimize for copy, if current overlap less than prev overlap,
+	// than (iter.overlap - header.overlap) byte don't need to copy
+	// if there are n entries that overlap after greater overlap,
+	// than n * (iter.overlap - header.overlap) copy can be saved.
+	if header.overlap > iter.overlap {
+		iter.key = append(iter.key[:iter.overlap], iter.baseKey[iter.overlap:header.overlap]...)
+	}
+
+	iter.overlap = header.overlap
+	valueOffset := fileEntryHeaderSize + header.diff
+	diffKey := entryData[fileEntryHeaderSize:valueOffset]
+	iter.key = append(iter.key[:header.overlap], diffKey...)
+	iter.value = entryData[valueOffset:]
 }
