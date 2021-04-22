@@ -415,14 +415,28 @@ func (t *Table) getBiggestAndSmallest() error {
 		return err
 	}
 
-	numKeys := len(t.index.baseKeys)
+	// get entry by the iterator
+	iter := t.NewIterator(false)
 
+	// smallest key
+	iter.SeekToFirst()
+	if !iter.Valid() {
+		return iter.err
+	}
+	key := iter.Key()
 	// deep copy
-	t.smallest = make([]byte, len(t.index.baseKeys[0]))
-	copy(t.smallest, t.index.baseKeys[0])
+	t.smallest = make([]byte, len(key))
+	copy(t.smallest, key)
 
-	t.biggest = make([]byte, len(t.index.baseKeys[numKeys-1]))
-	copy(t.biggest, t.index.baseKeys[numKeys-1])
+	// biggest key
+	iter.SeekToLast()
+	if !iter.Valid() {
+		return iter.err
+	}
+	key = iter.Key()
+	// deep copy
+	t.biggest = make([]byte, len(key))
+	copy(t.biggest, key)
 
 	return nil
 }

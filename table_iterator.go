@@ -1,6 +1,7 @@
 package golbat
 
 import (
+	"bytes"
 	"io"
 	"sort"
 )
@@ -12,17 +13,21 @@ type TableIterator struct {
 
 	blockId int
 	err     error
+	reverse bool
 }
 
-func (t *Table) NewIterator() *TableIterator {
+func (t *Table) NewIterator(reverse bool) *TableIterator {
 	t.IncrRef()
 
-	return &TableIterator{table: t}
+	return &TableIterator{table: t, reverse: reverse}
 }
 
-// Seek return the first entry that is >= input key from start
+// Seek return the first entry that is >= input key from start (or <= input key if reverse enable)
 func (iter *TableIterator) Seek(key []byte) {
 	iter.seekFrom(key, restart)
+	if iter.reverse && !bytes.Equal(iter.Key(), key) {
+		iter._prev()
+	}
 }
 
 // Seek return the first entry that is >= input key from pos (may be start or last pos)
@@ -64,8 +69,16 @@ func (iter *TableIterator) seekFrom(key []byte, mode seekMode) {
 	// Case 2: No need to do anything. We already did the seek in block[found-1].
 }
 
-// SeekToFirst get the first entry(with smallest key) in the table
+// SeekToFirst get the first entry(with smallest key) in the table (or last entry if reverse enable).
 func (iter *TableIterator) SeekToFirst() {
+	if iter.reverse {
+		iter._seekToLast()
+	} else {
+		iter._seekToFirst()
+	}
+}
+
+func (iter *TableIterator) _seekToFirst() {
 	iter.err = nil
 	iter.readBlockById(0)
 	if iter.err != nil {
@@ -74,8 +87,16 @@ func (iter *TableIterator) SeekToFirst() {
 	iter.biter.SeekToFirst()
 }
 
-// SeekToFirst get the last entry(with biggest key) in the table
+// SeekToLast get the last entry(with biggest key) in the table (or first entry if reverse enable).
 func (iter *TableIterator) SeekToLast() {
+	if iter.reverse {
+		iter._seekToFirst()
+	} else {
+		iter._seekToLast()
+	}
+}
+
+func (iter *TableIterator) _seekToLast() {
 	iter.err = nil
 	iter.readBlockById(iter.table.BlockCount() - 1)
 	if iter.err != nil {
@@ -84,9 +105,16 @@ func (iter *TableIterator) SeekToLast() {
 	iter.biter.SeekToLast()
 }
 
-// Next get next entry in the current block, if there is no any entry,
-// it will move to the next block and get the first entry, until the last block
+// Next get next entry in the current block (or prev entry if reverse enable).
 func (iter *TableIterator) Next() {
+	if iter.reverse {
+		iter._prev()
+	} else {
+		iter._next()
+	}
+}
+
+func (iter *TableIterator) _next() {
 	iter.err = nil
 
 	// no more block
@@ -112,13 +140,20 @@ func (iter *TableIterator) Next() {
 	if !iter.biter.Valid() {
 		iter.blockId++
 		iter.biter = nil
-		iter.Next()
+		iter._next()
 	}
 }
 
-// Prev get prev entry in the current block, if there is already first entry,
-// it will move to prev block and get the last entry, until the first block
+// Prev get prev entry in the current block (or next entry if reverse enable)
 func (iter *TableIterator) Prev() {
+	if iter.reverse {
+		iter._next()
+	} else {
+		iter._prev()
+	}
+}
+
+func (iter *TableIterator) _prev() {
 	iter.err = nil
 
 	// no more block
@@ -144,7 +179,7 @@ func (iter *TableIterator) Prev() {
 	if !iter.biter.Valid() {
 		iter.blockId--
 		iter.biter = nil
-		iter.Prev()
+		iter._prev()
 	}
 }
 
@@ -218,9 +253,10 @@ type TablesIterator struct {
 	tables   []*Table
 
 	tableId int
+	reverse bool
 }
 
-func NewTablesIterator(tables []*Table) *TablesIterator {
+func NewTablesIterator(tables []*Table, reverse bool) *TablesIterator {
 	iters := make([]*TableIterator, len(tables))
 
 	for i := 0; i < len(tables); i++ {
@@ -230,19 +266,27 @@ func NewTablesIterator(tables []*Table) *TablesIterator {
 	return &TablesIterator{
 		iters:   iters,
 		tables:  tables,
-		tableId: -2,
+		tableId: -1,
+		reverse: reverse,
 	}
 }
 
-// Seek find the first entry's key >= input key.
+// Seek find the first entry's key >= input key, 0r <= input key if reverse enable.
 func (iter *TablesIterator) Seek(key []byte) {
 	n := len(iter.tables)
 
-	found := sort.Search(n, func(i int) bool {
-		return compareKeys(iter.tables[i].biggest, key) >= 0
-	})
+	var found int
+	if iter.reverse {
+		found = n - 1 - sort.Search(n, func(i int) bool {
+			return compareKeys(iter.tables[n-1-i].Smallest(), key) <= 0
+		})
+	} else {
+		found = sort.Search(n, func(i int) bool {
+			return compareKeys(iter.tables[i].Biggest(), key) >= 0
+		})
+	}
 
-	if found == n {
+	if found == n || found < 0 {
 		// not found, change status to invalid
 		iter.getTableIteratorById(-1)
 		return
@@ -252,66 +296,82 @@ func (iter *TablesIterator) Seek(key []byte) {
 	iter.currIter.Seek(key)
 }
 
-// SeekToFirst get the first entry(with smallest key) in the tables
+// SeekToFirst get the first entry(with smallest key) in the tables, or last entry if reverse enable.
 func (iter *TablesIterator) SeekToFirst() {
-	iter.getTableIteratorById(0)
+	if iter.reverse {
+		iter.getTableIteratorById(len(iter.tables) - 1)
+	} else {
+		iter.getTableIteratorById(0)
+	}
+
 	iter.currIter.SeekToFirst()
 }
 
-// SeekToLast get the first entry(with biggest key) in the table
+// SeekToLast get the last entry(with biggest key) in the table, or first entry if reverse enable.
 func (iter *TablesIterator) SeekToLast() {
-	iter.getTableIteratorById(len(iter.tables) - 1)
+	if iter.reverse {
+		iter.getTableIteratorById(0)
+	} else {
+		iter.getTableIteratorById(len(iter.tables) - 1)
+	}
+
 	iter.currIter.SeekToLast()
 }
 
-// Next get next entry in the current table, if there is no any entry,
-// it will move to the next table and get the first entry, until the last table
+// Next get next entry in the tables, or prev entry if reverse enable.
 func (iter *TablesIterator) Next() {
-	// first read
-	if iter.tableId == -2 {
-		iter.SeekToFirst()
+	iter.currIter.Next()
+	if iter.currIter.Valid() {
 		return
 	}
 
-	iter.currIter.Next()
-	// reach the end of current table or empty table, get next table
-	if !iter.currIter.Valid() {
-		iter.getTableIteratorById(iter.tableId + 1)
-		// no more tables
+	// find the next not empty table
+	for {
+		if iter.reverse {
+			iter.getTableIteratorById(iter.tableId - 1)
+		} else {
+			iter.getTableIteratorById(iter.tableId + 1)
+		}
+
 		if !iter.Valid() {
+			// can not find any table can read
 			return
 		}
-		iter.Next()
+
+		iter.currIter.SeekToFirst()
+		if iter.currIter.Valid() {
+			// find the table
+			return
+		}
 	}
 }
 
-// Prev get prev entry in the current block, if there is no any entry,
-// it will move to the prev table and get the first entry, until the first table
+// Prev get prev entry in the tables, or next entry if reverse enable.
 func (iter *TablesIterator) Prev() {
-	// first read
-	if iter.tableId == -2 {
-		iter.getTableIteratorById(0)
-		iter.currIter.Prev()
+	iter.currIter.Prev()
+	if iter.currIter.Valid() {
 		return
 	}
 
-	iter.currIter.Prev()
-	// reach the begin of current table or empty table, get prev table
-	if !iter.currIter.Valid() {
-		iter.getTableIteratorById(iter.tableId - 1)
-		// no more tables
+	// find the next not empty table
+	for {
+		if iter.reverse {
+			iter.getTableIteratorById(iter.tableId + 1)
+		} else {
+			iter.getTableIteratorById(iter.tableId - 1)
+		}
+
 		if !iter.Valid() {
+			// can not find any table can read
 			return
 		}
 
 		iter.currIter.SeekToLast()
 		if iter.currIter.Valid() {
+			// find the table
 			return
 		}
-
-		iter.Prev()
 	}
-
 }
 
 func (iter *TablesIterator) Key() []byte {
@@ -354,8 +414,274 @@ func (iter *TablesIterator) getTableIteratorById(tableId int) {
 
 	iter.tableId = tableId
 	if iter.iters[tableId] == nil {
-		iter.iters[tableId] = iter.tables[tableId].NewIterator()
+		iter.iters[tableId] = iter.tables[tableId].NewIterator(iter.reverse)
 	}
 
 	iter.currIter = iter.iters[tableId]
+}
+
+type mergeNode struct {
+	key   []byte
+	iter  Iterator
+	valid bool
+
+	// optimize, Calling functions on concrete types is much faster (about 25-30%) than calling the
+	// interface's function.
+	mergeIter  *TablesMergeIterator
+	tablesIter *TablesIterator
+}
+
+// TablesMergeIterator merge different tables through TableIterator or TablesIterator
+type TablesMergeIterator struct {
+	left  mergeNode
+	right mergeNode
+	small *mergeNode
+
+	curKey  []byte
+	reverse bool
+}
+
+func (n *mergeNode) init(iter Iterator) {
+	n.iter = iter
+
+	n.mergeIter, _ = iter.(*TablesMergeIterator)
+	n.tablesIter, _ = iter.(*TablesIterator)
+}
+
+func (n *mergeNode) getKey() {
+	switch {
+	case n.mergeIter != nil:
+		n.valid = n.mergeIter.small.valid
+		if n.valid {
+			n.key = n.mergeIter.small.key
+		}
+	case n.tablesIter != nil:
+		n.valid = n.tablesIter.Valid()
+		if n.valid {
+			n.key = n.tablesIter.Key()
+		}
+	default:
+		n.valid = n.iter.Valid()
+		if n.valid {
+			n.key = n.iter.Key()
+		}
+	}
+}
+
+func (n *mergeNode) next() {
+	switch {
+	case n.mergeIter != nil:
+		n.mergeIter.Next()
+	case n.tablesIter != nil:
+		n.tablesIter.Next()
+	default:
+		n.iter.Next()
+	}
+
+	n.getKey()
+}
+
+func (n *mergeNode) prev() {
+	switch {
+	case n.mergeIter != nil:
+		n.mergeIter.Prev()
+	case n.tablesIter != nil:
+		n.tablesIter.Prev()
+	default:
+		n.iter.Prev()
+	}
+
+	n.getKey()
+}
+
+func (n *mergeNode) seek(key []byte) {
+	n.iter.Seek(key)
+	n.getKey()
+}
+
+func (n *mergeNode) seekToFirst() {
+	n.iter.SeekToFirst()
+	n.getKey()
+}
+
+func (n *mergeNode) seekToLast() {
+	n.iter.SeekToLast()
+	n.getKey()
+}
+
+// NewTablesMergeIterator creates a merge iterator.
+func NewTablesMergeIterator(iters []Iterator, reverse bool) Iterator {
+	switch len(iters) {
+	case 0:
+		return nil
+	case 1:
+		return iters[0]
+	case 2:
+		m := &TablesMergeIterator{
+			reverse: reverse,
+		}
+
+		m.left.init(iters[0])
+		m.right.init(iters[1])
+
+		// m.keepOrder() will make this correct
+		m.small = &m.left
+		return m
+	}
+
+	mid := len(iters) / 2
+	// create recursively
+	return NewTablesMergeIterator(
+		[]Iterator{
+			NewTablesMergeIterator(iters[:mid], reverse),
+			NewTablesMergeIterator(iters[mid:], reverse),
+		},
+		reverse,
+	)
+}
+
+// Seek get entry with key >= given key (or key <= given key if reverse enable).
+func (m *TablesMergeIterator) Seek(key []byte) {
+	m.left.seek(key)
+	m.right.seek(key)
+	m.keepOrder()
+	m.getCurrentKey()
+}
+
+// SeekToFirst get first entry (or last entry if reverse enable)
+func (m *TablesMergeIterator) SeekToFirst() {
+	m.left.seekToFirst()
+	m.right.seekToFirst()
+
+	m.keepOrder()
+	m.getCurrentKey()
+}
+
+// SeekToLast get last entry  (or first entry if reverse enable)
+func (m *TablesMergeIterator) SeekToLast() {
+	m.left.seekToLast()
+	m.right.seekToLast()
+
+	m.keepOrder()
+	m.getCurrentKey()
+}
+
+// Next returns the next entry (or prev entry if reverse enable).
+// If it is the same as the current key, ignore it.
+func (m *TablesMergeIterator) Next() {
+	for m.Valid() {
+		// until find the different key
+		if !bytes.Equal(m.small.key, m.curKey) {
+			break
+		}
+
+		m.small.next()
+		m.keepOrder()
+	}
+
+	m.getCurrentKey()
+}
+
+// Next returns the prev entry (or prev entry if reverse enable).
+// If it is the same as the current key, ignore it.
+func (m *TablesMergeIterator) Prev() {
+	for m.Valid() {
+		// until find the different key
+		if !bytes.Equal(m.small.key, m.curKey) {
+			break
+		}
+
+		m.small.prev()
+		m.keepOrder()
+	}
+
+	m.getCurrentKey()
+}
+
+// Valid returns whether the TablesMergeIterator is at a valid entry.
+func (m *TablesMergeIterator) Valid() bool {
+	return m.small.valid
+}
+
+// Key returns the key associated with the current iterator.
+func (m *TablesMergeIterator) Key() []byte {
+	return m.small.key
+}
+
+// Value returns the value associated with the iterator.
+func (m *TablesMergeIterator) Value() EValue {
+	return m.small.iter.Value()
+}
+
+// Close all the iterators
+func (m *TablesMergeIterator) Close() error {
+	lerr := m.left.iter.Close()
+	rerr := m.right.iter.Close()
+	if lerr != nil {
+		return Wrap(lerr, "TablesMergeIterator left")
+	}
+
+	return Wrap(rerr, "TablesMergeIterator right")
+}
+
+func (m *TablesMergeIterator) getCurrentKey() {
+	// deep copy
+	m.curKey = append(m.curKey[:0], m.small.key...)
+}
+
+func (m *TablesMergeIterator) bigger() *mergeNode {
+	if m.small == &m.left {
+		return &m.right
+	}
+
+	return &m.left
+}
+
+func (m *TablesMergeIterator) swap() {
+	if m.small == &m.left {
+		m.small = &m.right
+	} else if m.small == &m.right {
+		m.small = &m.left
+	}
+}
+
+func (m *TablesMergeIterator) keepOrder() {
+	// if the bigger is invalid, than the iterator is also invalid
+	if !m.bigger().valid {
+		return
+	}
+
+	// if the smaller is invalid, than change the small to the bigger, make the iterator keep valid
+	if !m.small.valid {
+		m.swap()
+		return
+	}
+
+	cmp := compareKeys(m.small.key, m.bigger().key)
+	switch {
+	case cmp == 0:
+		// both the keys are equal, so make right iterator ahead.
+		// Become the bigger one ( or the smaller one if reverse enable).
+		m.right.next()
+
+		if &m.right == m.small {
+			m.swap()
+		}
+		return
+	case cmp < 0:
+		// the small key is less than bigger's
+		if m.reverse {
+			// if reverse enable, than need make the small points to the bigger
+			m.swap()
+		}
+		// else do nothing, the small already points to the smallest
+		return
+	default:
+		// the small key is great than bigger's
+		if !m.reverse {
+			// if reverse disable, than need make the small points to the bigger
+			m.swap()
+		}
+		// else do nothing, the small already points to the biggest
+	}
 }
