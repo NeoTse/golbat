@@ -16,7 +16,7 @@ var option Options = Options{
 	MemTableSize:  256,
 	MaxBatchSize:  128,
 	MaxBatchCount: 10,
-	Comparator:    bytes.Compare,
+	comparator:    bytes.Compare,
 }
 
 func TestNewMemTable(t *testing.T) {

@@ -40,7 +40,7 @@ type Option func(*Options)
 type Options struct {
 	Dir             string
 	CompressionType CompressionType
-	Comparator      func([]byte, []byte) int
+	comparator      func([]byte, []byte) int // internel use only
 	NumGoroutines   int
 	// Logger
 

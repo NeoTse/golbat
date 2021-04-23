@@ -36,7 +36,7 @@ func NewMemTable(id int, option Options) (*memTable, error) {
 
 func OpenMemTable(fid, flags int, option Options) (*memTable, error) {
 	filePath := memTableFilePath(option.Dir, fid)
-	skl := internel.NewSkiplist(arenaSize(option), option.Comparator)
+	skl := internel.NewSkiplist(arenaSize(option), option.comparator)
 	mt := &memTable{
 		skl:    skl,
 		option: option,
