@@ -302,7 +302,7 @@ func (t *Table) DoesNotHave(hash uint32) bool {
 	}
 
 	bf := t.index.bloom
-	return bf.MayContainHash(hash)
+	return !bf.MayContainHash(hash)
 }
 
 func (t *Table) KeySplits(n int, prefix []byte) []string {

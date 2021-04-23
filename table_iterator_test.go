@@ -54,6 +54,13 @@ func TestTableIterator(t *testing.T) {
 	}
 }
 
+type seekCase struct {
+	in    string
+	valid bool
+	out   string
+	oval  string
+}
+
 func TestTableIteratorSeek(t *testing.T) {
 	opts := getTestTableOptions()
 	table := buildTestTable(t, "k", 10000, opts)
@@ -62,18 +69,14 @@ func TestTableIteratorSeek(t *testing.T) {
 		iter := table.NewIterator(false)
 		defer iter.Close()
 
-		var cases = []struct {
-			in    string
-			valid bool
-			out   string
-		}{
-			{"abc", true, "k0000"},
-			{"k0100", true, "k0100"},
-			{"k0100b", true, "k0101"}, // Test case where we jump to next block.
-			{"k1234", true, "k1234"},
-			{"k1234b", true, "k1235"},
-			{"k9999", true, "k9999"},
-			{"z", false, ""},
+		var cases = []seekCase{
+			{"abc", true, "k0000", "0"},
+			{"k0100", true, "k0100", "100"},
+			{"k0100b", true, "k0101", "101"}, // Test case where we jump to next block.
+			{"k1234", true, "k1234", "1234"},
+			{"k1234b", true, "k1235", "1235"},
+			{"k9999", true, "k9999", "9999"},
+			{"z", false, "", ""},
 		}
 
 		for _, cas := range cases {
@@ -86,6 +89,7 @@ func TestTableIteratorSeek(t *testing.T) {
 			require.True(t, iter.Valid())
 			k := parseKey(iter.Key())
 			require.EqualValues(t, cas.out, string(k))
+			require.EqualValues(t, cas.oval, iter.Value().Value)
 		}
 	})
 
@@ -93,18 +97,14 @@ func TestTableIteratorSeek(t *testing.T) {
 		iter := table.NewIterator(true)
 		defer iter.Close()
 
-		var cases = []struct {
-			in    string
-			valid bool
-			out   string
-		}{
-			{"abc", false, ""},
-			{"k0100", true, "k0100"},
-			{"k0101b", true, "k0101"}, // Test case where we jump to next block.
-			{"k1234", true, "k1234"},
-			{"k1234b", true, "k1234"},
-			{"k9999", true, "k9999"},
-			{"z", true, "k9999"},
+		var cases = []seekCase{
+			{"abc", false, "", ""},
+			{"k0100", true, "k0100", "100"},
+			{"k0101b", true, "k0101", "101"}, // Test case where we jump to next block.
+			{"k1234", true, "k1234", "1234"},
+			{"k1234b", true, "k1234", "1234"},
+			{"k9999", true, "k9999", "9999"},
+			{"z", true, "k9999", "9999"},
 		}
 
 		for _, cas := range cases {
@@ -117,6 +117,7 @@ func TestTableIteratorSeek(t *testing.T) {
 			require.True(t, iter.Valid())
 			k := parseKey(iter.Key())
 			require.EqualValues(t, cas.out, string(k))
+			require.EqualValues(t, cas.oval, iter.Value().Value)
 		}
 	})
 }
@@ -204,15 +205,11 @@ func TestTablesIterator(t *testing.T) {
 		}
 		require.EqualValues(t, 30000, count)
 
-		var cases = []struct {
-			in    string
-			valid bool
-			out   string
-		}{
-			{"a", true, "keya0000"},
-			{"keyb", true, "keyb0000"},
-			{"keyb9999b", true, "keyc0000"}, // Test case where we jump to next table.
-			{"keyd", false, ""},
+		var cases = []seekCase{
+			{"a", true, "keya0000", "0"},
+			{"keyb", true, "keyb0000", "0"},
+			{"keyb9999b", true, "keyc0000", "0"}, // Test case where we jump to next table.
+			{"keyd", false, "", ""},
 		}
 
 		for _, cas := range cases {
@@ -225,6 +222,7 @@ func TestTablesIterator(t *testing.T) {
 			require.True(t, iter.Valid())
 			k := parseKey(iter.Key())
 			require.EqualValues(t, cas.out, string(k))
+			require.EqualValues(t, cas.oval, iter.Value().Value)
 		}
 	})
 
@@ -249,15 +247,11 @@ func TestTablesIterator(t *testing.T) {
 		}
 		require.EqualValues(t, 0, count)
 
-		var cases = []struct {
-			in    string
-			valid bool
-			out   string
-		}{
-			{"a", false, ""},
-			{"keyb", true, "keya9999"}, // Test case where we jump to next table.
-			{"keyb9999b", true, "keyb9999"},
-			{"keyd", true, "keyc9999"},
+		var cases = []seekCase{
+			{"a", false, "", ""},
+			{"keyb", true, "keya9999", "9999"}, // Test case where we jump to next table.
+			{"keyb9999b", true, "keyb9999", "9999"},
+			{"keyd", true, "keyc9999", "9999"},
 		}
 
 		for _, cas := range cases {
@@ -270,6 +264,7 @@ func TestTablesIterator(t *testing.T) {
 			require.True(t, iter.Valid())
 			k := parseKey(iter.Key())
 			require.EqualValues(t, cas.out, string(k))
+			require.EqualValues(t, cas.oval, iter.Value().Value)
 		}
 	})
 }
@@ -495,15 +490,11 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 		require.Equal(t, len(expected), count)
 		require.False(t, it.Valid())
 
-		var cases = []struct {
-			in    string
-			valid bool
-			out   string
-		}{
-			{"k0", true, "k1"},
-			{"k4a", true, "k5"},
-			{"k9", true, "k9"},
-			{"k9a", false, ""},
+		var cases = []seekCase{
+			{"k0", true, "k1", "a1"},
+			{"k4a", true, "k5", "a5"},
+			{"k9", true, "k9", "b9"},
+			{"k9a", false, "", ""},
 		}
 
 		for _, cas := range cases {
@@ -516,6 +507,7 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 			require.True(t, it.Valid())
 			k := parseKey(it.Key())
 			require.EqualValues(t, cas.out, string(k))
+			require.EqualValues(t, cas.oval, it.Value().Value)
 		}
 
 	})
@@ -552,15 +544,11 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 		require.Equal(t, len(expected), count)
 		require.False(t, it.Valid())
 
-		var cases = []struct {
-			in    string
-			valid bool
-			out   string
-		}{
-			{"k0", false, ""},
-			{"k4a", true, "k4"},
-			{"k9", true, "k9"},
-			{"k9a", true, "k9"},
+		var cases = []seekCase{
+			{"k0", false, "", ""},
+			{"k4a", true, "k4", "a4"},
+			{"k9", true, "k9", "b9"},
+			{"k9a", true, "k9", "b9"},
 		}
 
 		for _, cas := range cases {
@@ -573,6 +561,7 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 			require.True(t, it.Valid())
 			k := parseKey(it.Key())
 			require.EqualValues(t, cas.out, string(k))
+			require.EqualValues(t, cas.oval, it.Value().Value)
 		}
 	})
 
