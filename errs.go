@@ -11,8 +11,10 @@ var (
 	ErrStopIteration = errors.New("stop iteration")
 	ErrBadWAL        = errors.New(
 		"WAL log is broken, need to be truncated that might cause data loss")
-	ErrChecksumMismatch = errors.New("checksum mismatch")
-	ErrCompressionType  = errors.New("Unsupported compression type")
+	ErrChecksumMismatch     = errors.New("checksum mismatch")
+	ErrCompressionType      = errors.New("unsupported compression type")
+	ErrBadMagic             = errors.New("manifest has bad magic")
+	ErrMFUnsupportedVersion = errors.New("manifest has unsupported version")
 )
 
 func Check(err error) {
