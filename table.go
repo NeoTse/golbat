@@ -205,13 +205,6 @@ func OpenTable(mf *internel.MmapFile, opts Options) (*Table, error) {
 		return nil, Wrapf(err, "failed to initialize table")
 	}
 
-	if opts.checkMode == OnTableRead || opts.checkMode == OnTableAndBlockRead {
-		if err := t.VerifyCheckSum(); err != nil {
-			mf.Close()
-			return nil, Wrapf(err, "failed to verify checksum")
-		}
-	}
-
 	return t, nil
 }
 
@@ -335,26 +328,23 @@ func (t *Table) VerifyCheckSum() error {
 	numBlocks := len(t.index.blockOffsets)
 
 	for i := 0; i < numBlocks; i++ {
-		blk, err := t.getBlockAt(i)
+		blk, err := t.getBlockAt(i, true)
+		if blk == nil {
+			blk = &memBlock{offset: -1}
+		}
+
 		if err != nil {
 			return Wrapf(err, "checksum validation failed for table: %s, block: %d, offset:%d",
 				t.Fd.Name(), i, blk.offset)
 		}
 
 		defer blk.decrRef()
-		if t.opt.checkMode != OnBlockRead && t.opt.checkMode != OnTableAndBlockRead {
-			if err = blk.verifyCheckSum(); err != nil {
-				return Wrapf(err,
-					"checksum validation failed for table: %s, block: %d, offset:%d",
-					t.Fd.Name(), i, blk.offset)
-			}
-		}
 	}
 
 	return nil
 }
 
-func (t *Table) getBlockAt(idx int) (*memBlock, error) {
+func (t *Table) getBlockAt(idx int, checksum bool) (*memBlock, error) {
 	if idx >= len(t.index.blockOffsets) {
 		return nil, errors.New("block out of index")
 	}
@@ -399,7 +389,7 @@ func (t *Table) getBlockAt(idx int) (*memBlock, error) {
 	blk.entriesIndexStart = start
 	blk.data = blk.data[:readPos+4] // without checksum
 	// verify block checksum
-	if t.opt.checkMode == OnBlockRead || t.opt.checkMode == OnTableAndBlockRead {
+	if checksum {
 		if err := blk.verifyCheckSum(); err != nil {
 			return nil, err
 		}

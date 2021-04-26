@@ -16,12 +16,22 @@ type TableIterator struct {
 	reverse bool
 
 	comparator Comparator
+	checksum   bool
 }
 
 func (t *Table) NewIterator(reverse bool) *TableIterator {
 	t.IncrRef()
 
-	return &TableIterator{table: t, reverse: reverse, comparator: t.opt.comparator}
+	return &TableIterator{table: t,
+		reverse:    reverse,
+		comparator: t.opt.comparator,
+		checksum:   true,
+	}
+}
+
+// DisableChecksum will disable checksum when iterator access the file.
+func (iter *TableIterator) DisableChecksum() {
+	iter.checksum = false
 }
 
 // Seek return the first entry that is >= input key from start (or <= input key if reverse enable)
@@ -228,7 +238,7 @@ func (iter *TableIterator) seekInBlock(bid int, key []byte) {
 func (iter *TableIterator) readBlockById(id int) {
 	if iter.blockId != id || iter.biter == nil {
 		iter.blockId = id
-		block, err := iter.table.getBlockAt(id)
+		block, err := iter.table.getBlockAt(id, iter.checksum)
 		if err != nil {
 			iter.err = err
 			return

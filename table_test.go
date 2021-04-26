@@ -170,19 +170,14 @@ func TestTableChecksum(t *testing.T) {
 	rb := make([]byte, 100)
 	rand.Read(rb)
 	opts := getTestTableOptions()
-	opts.checkMode = OnTableAndBlockRead
 	tbl := buildTestTable(t, "k", 10000, opts)
 	// Write random bytes at random location.
 	start := rand.Intn(len(tbl.Data) - len(rb))
 	n := copy(tbl.Data[start:], rb)
 	require.Equal(t, n, len(rb))
 
-	require.Panics(t, func() {
-		_, err := OpenTable(tbl.MmapFile, opts)
-		if ErrChecksumMismatch == err {
-			panic("checksum mismatch")
-		}
-	})
+	err := tbl.VerifyCheckSum()
+	require.Error(t, err)
 }
 
 func TestMaxVersion(t *testing.T) {

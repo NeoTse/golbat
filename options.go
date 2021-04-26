@@ -20,16 +20,6 @@ const (
 	ZSTDCompression
 )
 
-type ChecksumVerificationMode uint32
-
-const (
-	// WARNING: DON'T change the existing entries!
-	NoChecksum ChecksumVerificationMode = iota
-	OnTableRead
-	OnBlockRead
-	OnTableAndBlockRead
-)
-
 var (
 	DefaultReadOptions  = &ReadOptions{VerifyCheckSum: false, FillCache: true, Snapshot: nil}
 	DefaultWriteOptions = &WriteOptions{Sync: false}
@@ -60,7 +50,6 @@ type Options struct {
 
 	BlockSize int
 	TableSize int
-	checkMode ChecksumVerificationMode
 
 	BloomFalsePositive   float64
 	ZSTDCompressionLevel int
