@@ -283,9 +283,11 @@ type blockIterator struct {
 
 	err     error
 	overlap uint16 // the overlap of the previous key with the base key.
+
+	comparator Comparator
 }
 
-func NewBlockIterator(b *memBlock, tid, bid int) *blockIterator {
+func NewBlockIterator(opt *Options, b *memBlock, tid, bid int) *blockIterator {
 	iter := blockIterator{
 		curBlock: b,
 		tableId:  tid,
@@ -294,6 +296,7 @@ func NewBlockIterator(b *memBlock, tid, bid int) *blockIterator {
 
 	iter.data = b.data[:b.entriesIndexStart]
 	iter.entryOffsets = b.entryOffsets
+	iter.comparator = opt.comparator
 
 	return &iter
 }
@@ -325,7 +328,7 @@ func (iter *blockIterator) seekFrom(key []byte, mode seekMode) {
 		}
 
 		iter.readEntryById(i)
-		return compareKeys(iter.key, key) >= 0
+		return iter.comparator(iter.key, key) >= 0
 	})
 
 	iter.readEntryById(found)

@@ -274,11 +274,11 @@ type expectedResult struct {
 	value string
 }
 
-func checkMergeResult(t *testing.T, t1, t2 *Table, expected []expectedResult,
+func checkMergeResult(t *testing.T, opts *Options, t1, t2 *Table, expected []expectedResult,
 	seekKey []byte, reverse bool) {
 	it1 := t1.NewIterator(reverse)
 	it2 := NewTablesIterator([]*Table{t2}, reverse)
-	it := NewTablesMergeIterator([]Iterator{it1, it2}, reverse)
+	it := NewTablesMergeIterator(opts, []Iterator{it1, it2}, reverse)
 	defer it.Close()
 
 	count := 0
@@ -322,7 +322,7 @@ func TestTablesMergeIterator(t *testing.T) {
 			{"k4", "a4"},
 			{"k5", "a5"},
 		}
-		checkMergeResult(t, t1, t2, expected, nil, false)
+		checkMergeResult(t, &opts, t1, t2, expected, nil, false)
 	})
 
 	t.Run("reverse", func(t *testing.T) {
@@ -333,7 +333,7 @@ func TestTablesMergeIterator(t *testing.T) {
 			{"k2", "b2"},
 			{"k1", "a1"},
 		}
-		checkMergeResult(t, t1, t2, expected, nil, true)
+		checkMergeResult(t, &opts, t1, t2, expected, nil, true)
 	})
 }
 
@@ -353,7 +353,7 @@ func TestTablesMergeIteratorRightLess(t *testing.T) {
 			{"k2", "a2"},
 			{"l1", "b1"},
 		}
-		checkMergeResult(t, t1, t2, expected, nil, false)
+		checkMergeResult(t, &opts, t1, t2, expected, nil, false)
 	})
 
 	t.Run("reverse", func(t *testing.T) {
@@ -362,7 +362,7 @@ func TestTablesMergeIteratorRightLess(t *testing.T) {
 			{"k2", "a2"},
 			{"k1", "a1"},
 		}
-		checkMergeResult(t, t1, t2, expected, nil, true)
+		checkMergeResult(t, &opts, t1, t2, expected, nil, true)
 	})
 }
 
@@ -382,7 +382,7 @@ func TestTablesMergeIteratorLeftLess(t *testing.T) {
 			{"k2", "a2"},
 			{"l1", "b1"},
 		}
-		checkMergeResult(t, t1, t2, expected, nil, false)
+		checkMergeResult(t, &opts, t1, t2, expected, nil, false)
 	})
 
 	t.Run("reverse", func(t *testing.T) {
@@ -391,7 +391,7 @@ func TestTablesMergeIteratorLeftLess(t *testing.T) {
 			{"k2", "a2"},
 			{"k1", "a1"},
 		}
-		checkMergeResult(t, t1, t2, expected, nil, true)
+		checkMergeResult(t, &opts, t1, t2, expected, nil, true)
 	})
 }
 
@@ -418,7 +418,7 @@ func TestTablesMergeIteratorSeek(t *testing.T) {
 			{"k4", "a4"},
 			{"k5", "a5"},
 		}
-		checkMergeResult(t, t1, t2, expected, seekKey, false)
+		checkMergeResult(t, &opts, t1, t2, expected, seekKey, false)
 	})
 
 	t.Run("reverse", func(t *testing.T) {
@@ -427,7 +427,7 @@ func TestTablesMergeIteratorSeek(t *testing.T) {
 			{"k2", "b2"},
 			{"k1", "a1"},
 		}
-		checkMergeResult(t, t1, t2, expected, seekKey, true)
+		checkMergeResult(t, &opts, t1, t2, expected, seekKey, true)
 	})
 }
 
@@ -459,11 +459,11 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 	defer t4.DecrRef()
 
 	t.Run("forward", func(t *testing.T) {
-		iter1 := NewTablesMergeIterator([]Iterator{t1.NewIterator(false),
+		iter1 := NewTablesMergeIterator(&opts, []Iterator{t1.NewIterator(false),
 			t2.NewIterator(false)}, false)
 		iter2 := NewTablesIterator([]*Table{t3}, false)
 		iter3 := t4.NewIterator(false)
-		it := NewTablesMergeIterator([]Iterator{iter1, iter2, iter3}, false)
+		it := NewTablesMergeIterator(&opts, []Iterator{iter1, iter2, iter3}, false)
 		defer it.Close()
 
 		expected := []expectedResult{
@@ -513,11 +513,11 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 	})
 
 	t.Run("reverse", func(t *testing.T) {
-		iter1 := NewTablesMergeIterator([]Iterator{t1.NewIterator(true),
+		iter1 := NewTablesMergeIterator(&opts, []Iterator{t1.NewIterator(true),
 			t2.NewIterator(true)}, true)
 		iter2 := NewTablesIterator([]*Table{t3}, true)
 		iter3 := t4.NewIterator(true)
-		it := NewTablesMergeIterator([]Iterator{iter1, iter2, iter3}, true)
+		it := NewTablesMergeIterator(&opts, []Iterator{iter1, iter2, iter3}, true)
 		defer it.Close()
 
 		expected := []expectedResult{

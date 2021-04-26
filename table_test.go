@@ -24,6 +24,7 @@ func getTestTableOptions() Options {
 		ZSTDCompressionLevel: 15,
 		BlockSize:            4 * 1024,
 		BloomFalsePositive:   0.01,
+		comparator:           compareKeys,
 	}
 }
 
@@ -352,7 +353,7 @@ func BenchmarkTableReadMerge(b *testing.B) {
 				iters = append(iters, table.NewIterator(false))
 			}
 
-			miter := NewTablesMergeIterator(iters, false)
+			miter := NewTablesMergeIterator(&opts, iters, false)
 			defer miter.Close()
 
 			for miter.SeekToFirst(); miter.Valid(); miter.Next() {

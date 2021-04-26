@@ -33,6 +33,8 @@ var (
 	DefaultWriteOptions = &WriteOptions{Sync: false}
 )
 
+type Comparator = func([]byte, []byte) int
+
 type Option func(*Options)
 
 // Options are params for creating DB object.
@@ -40,7 +42,7 @@ type Option func(*Options)
 type Options struct {
 	Dir             string
 	CompressionType CompressionType
-	comparator      func([]byte, []byte) int // internel use only
+	comparator      Comparator // internel use only
 	NumGoroutines   int
 	// Logger
 
@@ -59,6 +61,8 @@ type Options struct {
 
 	BloomFalsePositive   float64
 	ZSTDCompressionLevel int
+
+	NumLevelZeroTablesStall int
 }
 
 type ReadOptions struct {

@@ -14,12 +14,14 @@ type TableIterator struct {
 	blockId int
 	err     error
 	reverse bool
+
+	comparator Comparator
 }
 
 func (t *Table) NewIterator(reverse bool) *TableIterator {
 	t.IncrRef()
 
-	return &TableIterator{table: t, reverse: reverse}
+	return &TableIterator{table: t, reverse: reverse, comparator: t.opt.comparator}
 }
 
 // Seek return the first entry that is >= input key from start (or <= input key if reverse enable)
@@ -40,7 +42,7 @@ func (iter *TableIterator) seekFrom(key []byte, mode seekMode) {
 	found := sort.Search(iter.table.BlockCount(), func(i int) bool {
 		currKey := iter.table.index.baseKeys[i]
 
-		return compareKeys(currKey, key) > 0
+		return iter.comparator(currKey, key) > 0
 	})
 
 	if found == 0 {
@@ -237,7 +239,7 @@ func (iter *TableIterator) readBlockById(id int) {
 			iter.biter.Close()
 		}
 
-		iter.biter = NewBlockIterator(block, int(iter.table.ID()), id)
+		iter.biter = NewBlockIterator(iter.table.opt, block, int(iter.table.ID()), id)
 	}
 }
 
@@ -252,8 +254,9 @@ type TablesIterator struct {
 	iters    []*TableIterator
 	tables   []*Table
 
-	tableId int
-	reverse bool
+	tableId    int
+	reverse    bool
+	comparator Comparator
 }
 
 func NewTablesIterator(tables []*Table, reverse bool) *TablesIterator {
@@ -264,10 +267,11 @@ func NewTablesIterator(tables []*Table, reverse bool) *TablesIterator {
 	}
 
 	return &TablesIterator{
-		iters:   iters,
-		tables:  tables,
-		tableId: -1,
-		reverse: reverse,
+		iters:      iters,
+		tables:     tables,
+		tableId:    -1,
+		reverse:    reverse,
+		comparator: tables[0].opt.comparator,
 	}
 }
 
@@ -278,11 +282,11 @@ func (iter *TablesIterator) Seek(key []byte) {
 	var found int
 	if iter.reverse {
 		found = n - 1 - sort.Search(n, func(i int) bool {
-			return compareKeys(iter.tables[n-1-i].Smallest(), key) <= 0
+			return iter.comparator(iter.tables[n-1-i].Smallest(), key) <= 0
 		})
 	} else {
 		found = sort.Search(n, func(i int) bool {
-			return compareKeys(iter.tables[i].Biggest(), key) >= 0
+			return iter.comparator(iter.tables[i].Biggest(), key) >= 0
 		})
 	}
 
@@ -437,8 +441,9 @@ type TablesMergeIterator struct {
 	right mergeNode
 	small *mergeNode
 
-	curKey  []byte
-	reverse bool
+	curKey     []byte
+	reverse    bool
+	comparator Comparator
 }
 
 func (n *mergeNode) init(iter Iterator) {
@@ -510,7 +515,7 @@ func (n *mergeNode) seekToLast() {
 }
 
 // NewTablesMergeIterator creates a merge iterator.
-func NewTablesMergeIterator(iters []Iterator, reverse bool) Iterator {
+func NewTablesMergeIterator(opt *Options, iters []Iterator, reverse bool) Iterator {
 	switch len(iters) {
 	case 0:
 		return nil
@@ -526,15 +531,17 @@ func NewTablesMergeIterator(iters []Iterator, reverse bool) Iterator {
 
 		// m.keepOrder() will make this correct
 		m.small = &m.left
+		m.comparator = opt.comparator
 		return m
 	}
 
 	mid := len(iters) / 2
 	// create recursively
 	return NewTablesMergeIterator(
+		opt,
 		[]Iterator{
-			NewTablesMergeIterator(iters[:mid], reverse),
-			NewTablesMergeIterator(iters[mid:], reverse),
+			NewTablesMergeIterator(opt, iters[:mid], reverse),
+			NewTablesMergeIterator(opt, iters[mid:], reverse),
 		},
 		reverse,
 	)
@@ -657,7 +664,7 @@ func (m *TablesMergeIterator) keepOrder() {
 		return
 	}
 
-	cmp := compareKeys(m.small.key, m.bigger().key)
+	cmp := m.comparator(m.small.key, m.bigger().key)
 	switch {
 	case cmp == 0:
 		// both the keys are equal, so make right iterator ahead.
