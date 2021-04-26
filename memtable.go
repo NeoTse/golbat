@@ -54,7 +54,9 @@ func OpenMemTable(fid, flags int, option Options) (*memTable, error) {
 	}
 
 	skl.Hanlder = func() {
-		Check(mt.wal.Delete())
+		if err := mt.wal.Delete(); err != nil {
+			option.Logger.Errorf("while deleting file: %s, err: %v", filePath, err)
+		}
 	}
 
 	if mt.wal.MmapFile.NewFile {

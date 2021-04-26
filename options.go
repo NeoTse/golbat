@@ -3,6 +3,8 @@ package golbat
 import (
 	"runtime"
 	"strconv"
+
+	"github.com/golbat/internel"
 )
 
 // DB contents are stored in a set of blocks, each of which holds a
@@ -45,6 +47,7 @@ type Options struct {
 	comparator      Comparator // internel use only
 	NumGoroutines   int
 	// Logger
+	Logger internel.Logger
 
 	MemTableSize  int
 	MaxBatchSize  int

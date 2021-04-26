@@ -40,6 +40,7 @@ type valueLog struct {
 	valueThreshold     uint32
 	garbageCh          chan struct{}
 	discard            *discard
+	logger             internel.Logger
 }
 
 func OpenValueLog(option Options) (*valueLog, error) {
@@ -49,6 +50,7 @@ func OpenValueLog(option Options) (*valueLog, error) {
 		valueLogMaxEntries: uint32(option.ValueLogMaxEntries),
 		valueThreshold:     uint32(option.ValueThreshold),
 		garbageCh:          make(chan struct{}, 1),
+		logger:             option.Logger,
 	}
 
 	if err := v.loadFiles(); err != nil {
@@ -83,6 +85,7 @@ func OpenValueLog(option Options) (*valueLog, error) {
 		}
 
 		if lf.size == 0 && fid != v.maxFid {
+			v.logger.Infof("Deleting empty file: %s", lf.path)
 			if err := lf.Delete(); err != nil {
 				return nil, Wrapf(err, "While deleting a empty log file: %s", lf.path)
 			}
@@ -127,7 +130,7 @@ func (v *valueLog) Write(option WriteOptions, batch *WriteBatch) error {
 	defer func() {
 		if option.Sync {
 			if err := curLogFile.Sync(); err != nil {
-				// TODO log
+				v.logger.Errorf("Error Sync value log(%s): %+v", curLogFile.path, err)
 			}
 		}
 	}()
@@ -215,6 +218,7 @@ func (v *valueLog) Close() error {
 		return nil
 	}
 
+	v.logger.Debugf("Closing value log and stopping garbage collection.")
 	var err error
 	for id, lf := range v.filesMap {
 		lf.lock.Lock() // We won’t release the lock.
@@ -425,6 +429,7 @@ func (v *valueLog) selectGCFile(ratio float64) *logFile {
 	for {
 		fid, count = v.discard.Max()
 		if fid == 0 {
+			v.logger.Debugf("No file need to garbage collection.")
 			return nil
 		}
 
@@ -439,16 +444,20 @@ func (v *valueLog) selectGCFile(ratio float64) *logFile {
 
 	f, err := lf.Fd.Stat()
 	if err != nil {
+		v.logger.Errorf("Unable to get stats for value log fid: %d err: %+v", f, err)
 		return nil
 	}
 
 	// the max discard count of the selected file doesn't reach the ratio
 	if thresold := ratio * float64(f.Size()); thresold > float64(count) {
+		v.logger.Debugf("Discard: %d less than threshold: %.0f for file: %s",
+			count, thresold, f.Name())
 		return nil
 	}
 
 	maxFid := atomic.LoadUint32(&v.maxFid)
 	if fid < maxFid {
+		v.logger.Infof("Found value log max discard fid: %d discard: %d", maxFid, count)
 		return lf
 	}
 
@@ -472,11 +481,18 @@ func (v *valueLog) gcLogFile(lf *logFile, db DB) error {
 	}
 	v.filesLock.RUnlock()
 
+	v.logger.Infof("Gc value log: %d, path:%d", lf.fid, lf.path)
 	option := db.GetOption()
 	wb := NewWriteBatch(&option)
 
+	var count, moved int
 	ropt := &ReadOptions{VerifyCheckSum: true}
 	filter := func(e *entry, _ valPtr) error {
+		count++
+
+		if count%100000 == 0 {
+			v.logger.Debugf("Processing entry %d", count)
+		}
 		ev, err := db.GetExtend(ropt, e.key)
 		if err != nil {
 			return err
@@ -506,6 +522,7 @@ func (v *valueLog) gcLogFile(lf *logFile, db DB) error {
 		vp.Decode(ev.Value)
 
 		if vp.fid == lf.fid && vp.offset == e.offset {
+			moved++
 			ne := entry{}
 
 			// deep copy
@@ -536,6 +553,9 @@ func (v *valueLog) gcLogFile(lf *logFile, db DB) error {
 	if err := db.Write(writeOption, wb); err != nil {
 		return err
 	}
+
+	v.logger.Infof("Total entries: %d. Moved: %d", count, moved)
+	v.logger.Infof("Removing file: %d, path: %s", lf.fid, lf.path)
 
 	canDeleteLogFile := false
 
