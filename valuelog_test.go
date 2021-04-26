@@ -45,7 +45,7 @@ func TestValueLogBasic(t *testing.T) {
 	require.Equal(t, 2, len(wb.ptrs))
 	require.EqualValues(t, valPtr{}, wb.ptrs[0])
 
-	ropt := ReadOptions{VerifyCheckSum: true}
+	ropt := &ReadOptions{VerifyCheckSum: true}
 	entry, err := log.Read(ropt, wb.ptrs[1])
 	require.Equal(t, Value, entry.rtype)
 	require.NotNil(t, entry)
@@ -108,7 +108,7 @@ func TestValueLogReload(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, log)
 	// read
-	ropt := ReadOptions{VerifyCheckSum: true}
+	ropt := &ReadOptions{VerifyCheckSum: true}
 	for i, vp := range vps {
 		e, err := log.Read(ropt, vp)
 		require.Nil(t, err)

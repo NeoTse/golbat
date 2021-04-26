@@ -169,7 +169,7 @@ func (v *valueLog) Write(option WriteOptions, batch *WriteBatch) error {
 	return nil
 }
 
-func (v *valueLog) Read(option ReadOptions, vp valPtr) (*entry, error) {
+func (v *valueLog) Read(option *ReadOptions, vp valPtr) (*entry, error) {
 	lf, err := v.getLogFile(vp)
 	if err != nil {
 		return nil, err
@@ -482,12 +482,17 @@ func (v *valueLog) gcLogFile(lf *logFile, db DB) error {
 			return err
 		}
 
-		// lsm store the key with value
+		// Version not found. Discard.
+		if ev.version != parseVersion(e.key) {
+			return nil
+		}
+
+		// lsm store the key with value. Discard.
 		if ev.Meta&ValPtr == 0 {
 			return nil
 		}
 
-		// entry has been deleted
+		// entry has been deleted. Discard.
 		if ev.Meta&Delete == 1 {
 			return nil
 		}
