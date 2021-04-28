@@ -54,6 +54,8 @@ type Options struct {
 	BloomFalsePositive   float64
 	ZSTDCompressionLevel int
 
+	MaxLevels               int
+	NumLevelZeroTables      int
 	NumLevelZeroTablesStall int
 }
 
