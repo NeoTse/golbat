@@ -20,13 +20,6 @@ import (
 
 const tableFile = ".sst"
 
-type TableInterface interface {
-	Smallest() []byte
-	Biggest() []byte
-	DoesNotHave(hash uint32) bool
-	MaxVersion() uint64
-}
-
 type tableIndex struct {
 	blockOffsets     []uint32
 	baseKeys         [][]byte
