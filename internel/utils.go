@@ -6,6 +6,7 @@ import (
 	"hash/crc32"
 	"io"
 	"reflect"
+	"sync"
 	"unsafe"
 )
 
@@ -155,3 +156,76 @@ func VerifyCheckSum(data []byte, checksum []byte) bool {
 
 //go:linkname FastRand runtime.fastrand
 func FastRand() uint32
+
+// Throttle allows a limited number of workers to run at a time. It also
+// provides a mechanism to check for errors encountered by workers and wait for
+// them to finish.
+type Throttle struct {
+	one sync.Once
+	wg  sync.WaitGroup
+
+	numWorkers chan struct{}
+	errs       chan error
+	finishErr  error
+}
+
+// NewThrottle creates a new throttle with a max number of workers.
+func NewThrottle(max int) *Throttle {
+	return &Throttle{
+		numWorkers: make(chan struct{}, max),
+		errs:       make(chan error, max),
+	}
+}
+
+// Do should be called by workers before they start working. It blocks if there
+// are already maximum number of workers working. If it detects an error from
+// previously Done workers, it would return it.
+func (t *Throttle) Do() error {
+	for {
+		select {
+		case t.numWorkers <- struct{}{}:
+			t.wg.Add(1)
+			return nil
+		case err := <-t.errs:
+			if err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// Done should be called by workers when they finish working. They can also
+// pass the error status of work done.
+func (t *Throttle) Done(err error) {
+	if err != nil {
+		t.errs <- err
+	}
+
+	select {
+	case <-t.numWorkers:
+	default:
+		panic("Throttle Do Done mismatch")
+	}
+
+	t.wg.Done()
+}
+
+// Finish waits until all workers have finished working. It would return any error passed by Done.
+// If Finish is called multiple time, it will wait for workers to finish only once(first time).
+// From next calls, it will return same error as found on first call.
+func (t *Throttle) Finish() error {
+	t.one.Do(func() {
+		t.wg.Wait()
+		close(t.numWorkers)
+		close(t.errs)
+
+		for err := range t.errs {
+			if err != nil {
+				t.finishErr = err
+				return
+			}
+		}
+	})
+
+	return t.finishErr
+}

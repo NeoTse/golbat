@@ -26,7 +26,7 @@ type defaultLog struct {
 	level level
 }
 
-func defaultLogger(level level) *defaultLog {
+func DefaultLogger(level level) *defaultLog {
 	return &defaultLog{
 		Logger: log.New(os.Stderr, "golbat ", log.LstdFlags),
 		level:  level,
@@ -39,7 +39,7 @@ func (l *defaultLog) Debugf(format string, v ...interface{}) {
 	}
 }
 
-func (l *defaultLog) InfoF(format string, v ...interface{}) {
+func (l *defaultLog) Infof(format string, v ...interface{}) {
 	if l.level <= INFO {
 		l.Printf("INFO: "+format, v...)
 	}

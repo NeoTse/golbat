@@ -1,5 +1,7 @@
 package golbat
 
+import "sync"
+
 type Snapshot struct {
 	version uint64
 
@@ -14,6 +16,7 @@ func (s *Snapshot) Version() uint64 {
 // snapshotList is mantian a doubly-linked circular list that keep using snapshot
 type snapshotList struct {
 	head Snapshot
+	sync.RWMutex
 }
 
 func newSnapshotList() *snapshotList {
@@ -32,11 +35,17 @@ func (sl *snapshotList) Empty() bool {
 }
 
 func (sl *snapshotList) Oldest() *Snapshot {
+	sl.RLock()
+	defer sl.RUnlock()
+
 	AssertTrue(!sl.Empty())
 	return sl.head.next
 }
 
 func (sl *snapshotList) Newest() *Snapshot {
+	sl.RLock()
+	defer sl.RUnlock()
+
 	AssertTrue(!sl.Empty())
 	return sl.head.prev
 }
@@ -45,6 +54,9 @@ func (sl *snapshotList) New(version uint64) *Snapshot {
 	AssertTrue(sl.Empty() || sl.Newest().version <= version)
 
 	snapshot := &Snapshot{version: version}
+	sl.Lock()
+	defer sl.Unlock()
+
 	snapshot.next = &sl.head
 	snapshot.prev = sl.head.prev
 	snapshot.prev.next = snapshot
@@ -54,6 +66,9 @@ func (sl *snapshotList) New(version uint64) *Snapshot {
 }
 
 func (sl *snapshotList) Delete(s *Snapshot) {
+	sl.Lock()
+	defer sl.Unlock()
+
 	s.next.prev = s.prev
 	s.prev.next = s.next
 }

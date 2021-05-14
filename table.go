@@ -244,6 +244,11 @@ func (t *Table) DecrRef() error {
 // MaxVersion returns the maximum version across all keys stored in this table.
 func (t *Table) MaxVersion() uint64 { return t.index.maxVersion }
 
+// IndexSize is the size of table index in bytes.
+func (t *Table) IndexSize() int {
+	return int(t.indexLen)
+}
+
 // BloomFilterSize returns the size of the bloom filter in bytes stored in memory.
 func (t *Table) BloomFilterSize() int { return len(t.index.bloom) }
 
@@ -291,6 +296,7 @@ func (t *Table) DoesNotHave(hash uint32) bool {
 	return !bf.MayContainHash(hash)
 }
 
+// KeySplits will split table at most n parts by prefix that base key matched.
 func (t *Table) KeySplits(n int, prefix []byte) []string {
 	if n == 0 {
 		return nil
@@ -317,6 +323,7 @@ func (t *Table) KeySplits(n int, prefix []byte) []string {
 	return res
 }
 
+// VerifyCheckSum will Verify that all blocks in the table are valid by the checksum
 func (t *Table) VerifyCheckSum() error {
 	numBlocks := len(t.index.blockOffsets)
 

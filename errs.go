@@ -15,6 +15,9 @@ var (
 	ErrCompressionType      = errors.New("unsupported compression type")
 	ErrBadMagic             = errors.New("manifest has bad magic")
 	ErrMFUnsupportedVersion = errors.New("manifest has unsupported version")
+	ErrFillTable            = errors.New("unable to fill tables")
+	ErrNoRewrite            = errors.New("Value log GC attempt didn't result in any cleanup")
+	ErrRejected             = errors.New("Value log GC request rejected")
 )
 
 func Check(err error) {

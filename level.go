@@ -173,6 +173,7 @@ func (l *level) GetTables(key []byte) ([]*Table, decrRefsFun) {
 		res := make([]*Table, 0, numTables)
 		for i := numTables - 1; i >= 0; i-- {
 			res = append(res, l.tables[i])
+			l.tables[i].IncrRef()
 		}
 
 		return res, func() error {
@@ -201,7 +202,7 @@ func (l *level) GetTables(key []byte) ([]*Table, decrRefsFun) {
 }
 
 // GetValue returns the value for given key or the key after that.
-func (l *level) GetValue(key []byte, checkKeyVersion bool) (EValue, error) {
+func (l *level) GetValue(key []byte) (EValue, error) {
 	tables, decr := l.GetTables(key)
 
 	var value EValue
@@ -209,11 +210,7 @@ func (l *level) GetValue(key []byte, checkKeyVersion bool) (EValue, error) {
 		return value, decr()
 	}
 
-	var maxVersion uint64
-	if checkKeyVersion {
-		value.version = parseVersion(key)
-	}
-
+	maxVersion := parseVersion(key)
 	hash := internel.Hash(parseKey(key))
 	for _, table := range tables {
 		if table.DoesNotHave(hash) {
@@ -230,17 +227,9 @@ func (l *level) GetValue(key []byte, checkKeyVersion bool) (EValue, error) {
 
 		matched := iter.Key()
 		if sameKey(key, matched) {
-			version := parseVersion(matched)
-			if checkKeyVersion {
-				if version <= value.version && version > maxVersion {
-					value = iter.ValueCopy()
-					maxVersion = version
-				}
-			} else {
-				if version > value.version {
-					value = iter.ValueCopy()
-					value.version = version
-				}
+			if version := parseVersion(matched); version <= maxVersion && value.version < version {
+				value = iter.ValueCopy()
+				value.version = version
 			}
 		}
 	}
@@ -263,12 +252,25 @@ func (l *level) OverlappingTables(from, to []byte) (int, int) {
 	return left, right
 }
 
+// TotalSize returns the total size of files in this level.
+func (l *level) TotalSize() int64 {
+	l.RLock()
+	defer l.RUnlock()
+
+	return l.totalSize
+}
+
 // NumTables returns the number of tables in this level.
 func (l *level) NumTables() int {
 	l.RLock()
 	defer l.RUnlock()
 
 	return len(l.tables)
+}
+
+// IsLastLevel will return true if this level is the last level(with max level id)
+func (l *level) IsLastLevel() bool {
+	return l.id == l.opts.MaxLevels-1
 }
 
 func (l *level) Close() error {

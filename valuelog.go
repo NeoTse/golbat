@@ -416,6 +416,39 @@ func (v *valueLog) updateDiscard(stats map[uint32]uint64) {
 	}
 }
 
+func (v *valueLog) runGC(discardRatio float64, db DB) error {
+	select {
+	case v.garbageCh <- struct{}{}:
+		defer func() {
+			<-v.garbageCh
+		}()
+
+		lf := v.selectGCFile(discardRatio)
+		if lf == nil {
+			return ErrNoRewrite
+		}
+
+		if err := v.gcLogFile(lf, db); err != nil {
+			return err
+		}
+
+		v.discard.Reset(lf.fid)
+		return nil
+
+	default:
+		return ErrRejected
+	}
+}
+
+func (v *valueLog) waitGC(closer *internel.Closer) {
+	defer closer.Done()
+	<-closer.HasBeenClosed()
+
+	// Block any GC in progress to finish, and don't allow any more writes to runGC by filling up
+	// the channel of size 1.
+	v.garbageCh <- struct{}{}
+}
+
 var writeOption = &WriteOptions{Sync: true}
 
 func (v *valueLog) selectGCFile(ratio float64) *logFile {

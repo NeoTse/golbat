@@ -113,6 +113,14 @@ func parseKey(key []byte) []byte {
 	return key[:len(key)-8]
 }
 
+func sameKey(key1, key2 []byte) bool {
+	if len(key1) != len(key2) {
+		return false
+	}
+
+	return bytes.Equal(parseKey(key1), parseKey(key2))
+}
+
 // first compare keys by increasing order, then compare sequence number by decreasing order
 func compareKeys(a, b []byte) int {
 	if cmp := bytes.Compare(parseKey(a), parseKey(b)); cmp != 0 {

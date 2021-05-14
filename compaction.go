@@ -3,6 +3,7 @@ package golbat
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"math"
 	"sync"
 )
@@ -12,9 +13,12 @@ type keyRange struct {
 	right []byte
 
 	comparator Comparator
+	inf        bool // useful when compact L0 tables
 }
 
-func getKeyRange(tables []*Table) keyRange {
+var infKeyRange = keyRange{inf: true}
+
+func getKeyRange(tables ...*Table) keyRange {
 	if len(tables) == 0 {
 		return keyRange{}
 	}
@@ -43,12 +47,13 @@ func getKeyRange(tables []*Table) keyRange {
 }
 
 func (r keyRange) Empty() bool {
-	return len(r.left) == 0 && len(r.right) == 0
+	return len(r.left) == 0 && len(r.right) == 0 && !r.inf
 }
 
 func (r keyRange) Equal(other keyRange) bool {
 	return bytes.Equal(r.left, other.left) &&
-		bytes.Equal(r.right, other.right)
+		bytes.Equal(r.right, other.right) &&
+		r.inf == other.inf
 }
 
 func (r keyRange) IsOverlapsWith(other keyRange) bool {
@@ -58,6 +63,10 @@ func (r keyRange) IsOverlapsWith(other keyRange) bool {
 
 	if other.Empty() {
 		return false
+	}
+
+	if r.inf || other.inf {
+		return true
 	}
 
 	if r.comparator(r.left, other.right) < 0 {
@@ -87,10 +96,14 @@ func (r *keyRange) MergeFrom(other keyRange) {
 	if len(r.right) == 0 || r.comparator(r.right, other.right) < 0 {
 		r.right = other.right
 	}
+
+	if other.inf {
+		r.inf = true
+	}
 }
 
 func (r keyRange) String() string {
-	return fmt.Sprintf("[left=%x, right=%x]", r.left, r.right)
+	return fmt.Sprintf("[left=%x, right=%x, inf=%v]", r.left, r.right, r.inf)
 }
 
 type levelCompactStatus struct {
@@ -150,4 +163,110 @@ func (cs *compactStatus) DeleteSize(l int) int64 {
 	defer cs.RUnlock()
 
 	return cs.levels[l].delSize
+}
+
+// Delete will delete the infos from the compactStatus when the compation is completed.
+func (cs *compactStatus) Delete(ci compactInfo) {
+	cs.Lock()
+	defer cs.Unlock()
+
+	curr := cs.levels[ci.curr.id]
+	next := cs.levels[ci.next.id]
+
+	curr.delSize -= ci.size
+	found := curr.Remove(ci.currRange)
+
+	if ci.curr != ci.next && !ci.nextRange.Empty() {
+		found = next.Remove(ci.nextRange) && found
+	}
+
+	if !found {
+		currR := ci.currRange
+		nextR := ci.nextRange
+		fmt.Printf("Looking for: %s in this level %d.\n", currR, ci.curr.id)
+		fmt.Printf("This Level:\n%s\n", curr)
+		fmt.Println()
+		fmt.Printf("Looking for: %s in next level %d.\n", nextR, ci.next.id)
+		fmt.Printf("Next Level:\n%s\n", next)
+		log.Fatal("keyRange not found")
+	}
+}
+
+// Check will check whether we can run this compactDef. That it doesn't overlap with any
+// other running compaction. If it can be run, it would update infos in the compactStatus state.
+func (cs *compactStatus) Check(ci compactInfo) bool {
+	cs.Lock()
+	defer cs.Unlock()
+
+	curr := cs.levels[ci.curr.id]
+	next := cs.levels[ci.next.id]
+
+	if curr.IsOverlapsWith(ci.currRange) {
+		return false
+	}
+
+	if next.IsOverlapsWith(ci.nextRange) {
+		return false
+	}
+
+	curr.ranges = append(curr.ranges, ci.currRange)
+	next.ranges = append(next.ranges, ci.nextRange)
+	curr.delSize += ci.size
+
+	tables := ci.tables()
+	for _, table := range tables {
+		cs.tables[table.id] = struct{}{}
+	}
+
+	return true
+}
+
+type dynamicLevelSize struct {
+	baseLevel  int
+	targetSize []int64
+	fileSize   []int64
+}
+
+type compactionPriority struct {
+	level        int
+	score        float64
+	adjusted     float64
+	dropPrefixes [][]byte
+	dls          dynamicLevelSize
+}
+
+type compactInfo struct {
+	compactId int
+
+	cp   compactionPriority
+	curr *level
+	next *level
+
+	fromTables []*Table
+	toTables   []*Table
+
+	currRange keyRange
+	nextRange keyRange
+	splits    []keyRange
+
+	size         int64
+	dropPrefixes [][]byte
+}
+
+func (ci *compactInfo) lock() {
+	ci.curr.RLock()
+	ci.next.RLock()
+}
+
+func (ci *compactInfo) unlock() {
+	ci.curr.RUnlock()
+	ci.next.RUnlock()
+}
+
+func (ci *compactInfo) tables() []*Table {
+	ts := make([]*Table, 0, len(ci.fromTables)+len(ci.toTables))
+	ts = append(ts, ci.fromTables...)
+	ts = append(ts, ci.toTables...)
+
+	return ts
 }

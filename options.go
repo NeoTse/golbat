@@ -49,7 +49,7 @@ type Options struct {
 	ValueThreshold     int
 
 	BlockSize int
-	TableSize int
+	TableSize uint64
 
 	BloomFalsePositive   float64
 	ZSTDCompressionLevel int
@@ -57,6 +57,11 @@ type Options struct {
 	MaxLevels               int
 	NumLevelZeroTables      int
 	NumLevelZeroTablesStall int
+	// see https://github.com/facebook/rocksdb/blob/v3.11/include/rocksdb/options.h#L366-L423
+	BaseTableSize       int64
+	BaseLevelSize       int64
+	LevelSizeMultiplier int
+	NumCompactors       int
 }
 
 type ReadOptions struct {
