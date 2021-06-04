@@ -14,8 +14,8 @@ var testDir, _ = ioutil.TempDir("", "golbat-test")
 var option Options = Options{
 	Dir:           testDir,
 	MemTableSize:  256,
-	MaxBatchSize:  128,
-	MaxBatchCount: 10,
+	maxBatchSize:  128,
+	maxBatchCount: 10,
 	comparator:    bytes.Compare,
 }
 

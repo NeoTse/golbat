@@ -18,8 +18,9 @@ import (
 )
 
 type levels struct {
-	nextId    uint64 // atomic
-	l0stallMs int64  // atomic
+	nextId     uint64 // atomic
+	l0stallMs  int64  // atomic
+	maxVersion uint64 // atomic
 
 	ls      []*level
 	cstatus compactStatus
@@ -45,6 +46,7 @@ func NewLevels(opts *Options, mf *Manifest, vlog *valueLog,
 
 	for i := 0; i < opts.MaxLevels; i++ {
 		s.ls[i] = NewLevel(opts, i)
+		s.cstatus.levels[i] = new(levelCompactStatus)
 	}
 
 	if err := checkTablesByManifest(opts, mf); err != nil {
@@ -78,11 +80,24 @@ func NewLevels(opts *Options, mf *Manifest, vlog *valueLog,
 	return s, nil
 }
 
+func (ls *levels) updateMaxVersion(version uint64) uint64 {
+	oldVersion := ls.MaxVersion()
+
+	for !atomic.CompareAndSwapUint64(&ls.maxVersion, oldVersion, oldVersion+version) {
+		oldVersion = ls.MaxVersion()
+	}
+
+	return oldVersion
+}
+
+func (ls *levels) MaxVersion() uint64 {
+	return atomic.LoadUint64(&ls.maxVersion)
+}
+
 // GetValue searches the value for a given key in all the levels of the LSM tree. It returns
 // key version <= the expected version (with the key). If not found, it returns an empty.
 func (ls *levels) GetValue(key []byte, startLevel int) (EValue, error) {
 	res := EValue{}
-	version := parseVersion(key)
 	for _, level := range ls.ls {
 		if level.id < startLevel {
 			continue
@@ -98,14 +113,8 @@ func (ls *levels) GetValue(key []byte, startLevel int) (EValue, error) {
 			continue
 		}
 
-		if ev.version == version {
-			return ev, nil
-		}
-
-		// store the max version value that can found in lsm tree
-		if res.version < ev.version {
-			res = ev
-		}
+		res = ev
+		break
 	}
 
 	return res, nil
@@ -309,7 +318,7 @@ func (ls *levels) getDynamicLevelSize() dynamicLevelSize {
 		} else if i < d.baseLevel {
 			d.fileSize[i] = tableSize
 		} else {
-			tableSize *= int64(ls.opts.LevelSizeMultiplier)
+			tableSize *= int64(ls.opts.TableSizeMultiplier)
 			d.fileSize[i] = tableSize
 		}
 	}
@@ -744,27 +753,13 @@ func (ls *levels) subcompact(it Iterator, kr keyRange, ci compactInfo,
 	builderThrottle *internel.Throttle, res chan<- *Table) {
 	// Check overlap of the top level with the levels which are not being
 	// compacted in this compaction.
-	hasOverlap := func() bool {
-		kr := getKeyRange(ci.tables()...)
-		for i, level := range ls.ls {
-			if i < ci.next.id+1 {
-				continue
-			}
-
-			level.RLock()
-			left, right := level.OverlappingTables(kr.left, kr.right)
-			level.RUnlock()
-
-			if right-left > 0 {
-				return true
-			}
-		}
-
-		return false
-	}()
+	hasOverlap := ls.isOverlapsWith(ci.tables(), ci.next.id+1)
 
 	// Pick a discard version, so we can discard versions below this version.
-	discardVersion := ls.snapshots.Oldest().version
+	discardVersion := ls.MaxVersion()
+	if !ls.snapshots.Empty() {
+		discardVersion = ls.snapshots.Oldest().version
+	}
 
 	// Try to collect stats so that we can inform value log about GC.
 	// That would help us find which value log file should be GCed.
@@ -907,7 +902,7 @@ func (ls *levels) subcompact(it Iterator, kr keyRange, ci compactInfo,
 		}
 
 		newOpts := *ls.opts
-		newOpts.TableSize = uint64(ci.cp.dls.fileSize[ci.next.id])
+		newOpts.tableSize = uint64(ci.cp.dls.fileSize[ci.next.id])
 		builder := NewTableBuilder(newOpts)
 		buildTable(builder)
 
@@ -1133,6 +1128,14 @@ func (ls *levels) fillTables(ci *compactInfo) bool {
 	}
 
 	return false
+}
+
+func (ls *levels) appendIterators(iters []Iterator, option *ReadOptions) []Iterator {
+	for _, level := range ls.ls {
+		iters = level.appendIterators(iters, option)
+	}
+
+	return iters
 }
 
 func sortByMaxVersion(tables []*Table) {

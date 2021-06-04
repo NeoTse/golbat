@@ -1,9 +1,6 @@
 package golbat
 
 import (
-	"runtime"
-	"strconv"
-
 	"github.com/golbat/internel"
 )
 
@@ -21,8 +18,12 @@ const (
 )
 
 var (
-	DefaultReadOptions  = &ReadOptions{VerifyCheckSum: false, FillCache: true, Snapshot: nil}
-	DefaultWriteOptions = &WriteOptions{Sync: false}
+	DefaultReadOptions  = ReadOptions{VerifyCheckSum: true, FillCache: false, Snapshot: nil}
+	DefaultWriteOptions = WriteOptions{Sync: false}
+)
+
+const (
+	maxValueThreshold = (1 << 20) // 1 MB
 )
 
 type Comparator = func([]byte, []byte) int
@@ -35,13 +36,13 @@ type Options struct {
 	Dir             string
 	CompressionType CompressionType
 	comparator      Comparator // internel use only
-	NumGoroutines   int
 	// Logger
 	Logger internel.Logger
 
+	NumMemtables  int
 	MemTableSize  int
-	MaxBatchSize  int
-	MaxBatchCount int
+	maxBatchSize  int
+	maxBatchCount int
 
 	ValueLogDir        string
 	ValueLogFileSize   int
@@ -49,7 +50,7 @@ type Options struct {
 	ValueThreshold     int
 
 	BlockSize int
-	TableSize uint64
+	tableSize uint64 // internel use only
 
 	BloomFalsePositive   float64
 	ZSTDCompressionLevel int
@@ -61,12 +62,13 @@ type Options struct {
 	BaseTableSize       int64
 	BaseLevelSize       int64
 	LevelSizeMultiplier int
+	TableSizeMultiplier int
 	NumCompactors       int
 }
 
 type ReadOptions struct {
 	VerifyCheckSum bool
-	FillCache      bool
+	FillCache      bool // current doesn't support
 	Snapshot       *Snapshot
 }
 
@@ -74,12 +76,34 @@ type WriteOptions struct {
 	Sync bool
 }
 
-func NumGoroutines(n int) Option {
-	return func(o *Options) {
-		if n <= 0 || n > 2*runtime.NumCPU() {
-			panic("Invaild number of goroutines used in streams: " + strconv.Itoa(n))
-		}
+func DefaultOptions(dir string) Options {
+	return Options{
+		Dir:         dir,
+		ValueLogDir: dir,
 
-		o.NumGoroutines = n
+		MemTableSize:        64 << 20, // 64 MB
+		BaseTableSize:       2 << 20,  // 2 MB
+		BaseLevelSize:       10 << 20, // 10 MB
+		LevelSizeMultiplier: 10,
+		TableSizeMultiplier: 2,
+		MaxLevels:           7,
+
+		NumCompactors:           4,
+		NumLevelZeroTables:      5,
+		NumLevelZeroTablesStall: 15,
+		NumMemtables:            5,
+		BloomFalsePositive:      0.01,
+		BlockSize:               4 * 1024, // 4 KB
+
+		// so 2*ValueLogFileSize won't overflow on 32-bit systems.
+		ValueLogFileSize:   1<<30 - 1,
+		ValueLogMaxEntries: 10000,
+		ValueThreshold:     maxValueThreshold,
+
+		CompressionType:      SnappyCompression,
+		ZSTDCompressionLevel: 1,
+
+		comparator: compareKeys,
+		Logger:     internel.DefaultLogger(internel.INFO),
 	}
 }

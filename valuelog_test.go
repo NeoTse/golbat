@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/golbat/internel"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,8 +15,9 @@ func getDefaultOption() *Options {
 		ValueThreshold:     32,
 		ValueLogFileSize:   1<<30 - 1,
 		ValueLogMaxEntries: 100000,
-		MaxBatchSize:       1 << 20,
-		MaxBatchCount:      100,
+		maxBatchSize:       1 << 20,
+		maxBatchCount:      100,
+		Logger:             internel.DefaultLogger(internel.DEBUG),
 	}
 }
 
@@ -36,12 +38,11 @@ func TestValueLogBasic(t *testing.T) {
 	const longValue = "abcdefghijklmnopqrstuvwxyz0123456"
 	require.True(t, len(longValue) >= option.ValueThreshold)
 
-	wopt := WriteOptions{Sync: false}
-	wb := NewWriteBatch(option)
+	wb := &writeBatchInternel{}
 	wb.Put([]byte("key1"), []byte(value))
 	wb.Put([]byte("key2"), []byte(longValue))
 
-	log.Write(wopt, wb)
+	log.Write(wb)
 	require.Equal(t, 2, len(wb.ptrs))
 	require.EqualValues(t, valPtr{}, wb.ptrs[0])
 
@@ -68,18 +69,22 @@ func TestValueLogReload(t *testing.T) {
 	require.NotNil(t, log)
 	defer log.Close()
 
-	wopt := WriteOptions{Sync: false}
-	wb := NewWriteBatch(option)
+	wbOption = option
+	wb := &writeBatchInternel{}
+
 	// write
 	for i := 0; i < 100; i++ {
-		wb.Put(getKey(i), getValue(i*100))
-		if wb.IsFull() {
-			require.NoError(t, log.Write(wopt, wb))
+		key := getKey(i)
+		value := getValue(i * 100)
+		if wb.FullWith(key, value) {
+			require.NoError(t, log.Write(wb))
 			wb.Clear()
 		}
+
+		wb.Put(key, value)
 	}
 
-	require.NoError(t, log.Write(wopt, wb))
+	require.NoError(t, log.Write(wb))
 	wb.Clear()
 
 	// read
@@ -131,8 +136,8 @@ func TestValueLogGC(t *testing.T) {
 	require.Nil(t, err)
 	defer log.Close()
 
-	wopt := WriteOptions{Sync: false}
-	wb := NewWriteBatch(option)
+	wbOption = option
+	wb := &writeBatchInternel{}
 
 	vals := make(map[string]*EValue)
 	valueSize := 4 << 10 // 4 KB
@@ -140,26 +145,29 @@ func TestValueLogGC(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		k, v := getKey((i)), getRandValue(valueSize)
 		vals[string(k)] = &EValue{Meta: Value | ValPtr, Value: v}
-		wb.Put(k, v)
-		if wb.IsFull() {
-			require.NoError(t, log.Write(wopt, wb))
+		if wb.FullWith(k, v) {
+			require.NoError(t, log.Write(wb))
 			wb.Clear()
 		}
+
+		wb.Put(k, v)
 	}
-	require.NoError(t, log.Write(wopt, wb))
+	require.NoError(t, log.Write(wb))
 	wb.Clear()
 
 	// delete first 50 entries
 	for i := 0; i < 50; i++ {
 		k := getKey(i)
 		vals[string(k)].Meta = Delete | ValPtr
-		wb.Delete(k)
-		if wb.IsFull() {
-			require.NoError(t, log.Write(wopt, wb))
+
+		if wb.FullWith(k, emptyValue) {
+			require.NoError(t, log.Write(wb))
 			wb.Clear()
 		}
+
+		wb.Delete(k)
 	}
-	require.NoError(t, log.Write(wopt, wb))
+	require.NoError(t, log.Write(wb))
 	wb.Clear()
 
 	// gc
@@ -170,8 +178,8 @@ func TestValueLogGC(t *testing.T) {
 	require.Equal(t, uint32(2), log.maxFid)
 	require.Equal(t, 2, len(log.filesMap))
 
-	filter := func(key []byte) EValue {
-		return *vals[string(key)]
+	filter := func(key []byte) *EValue {
+		return vals[string(key)]
 	}
 	db := NewMockDB(log, option, filter)
 	require.NoError(t, log.gcLogFile(last, db))
@@ -195,10 +203,10 @@ func TestValueLogGC(t *testing.T) {
 type mockDB struct {
 	vlog   *valueLog
 	option *Options
-	filter func([]byte) EValue
+	filter func([]byte) *EValue
 }
 
-func NewMockDB(v *valueLog, option *Options, filter func([]byte) EValue) DB {
+func NewMockDB(v *valueLog, option *Options, filter func([]byte) *EValue) DB {
 	return &mockDB{
 		vlog:   v,
 		option: option,
@@ -207,36 +215,42 @@ func NewMockDB(v *valueLog, option *Options, filter func([]byte) EValue) DB {
 }
 
 func (db *mockDB) Put(options *WriteOptions, key, value []byte) error {
-	wb := NewWriteBatch(db.option)
+	wb := &WriteBatch{}
 	wb.Put(key, value)
 
 	return db.Write(options, wb)
 }
 
 func (db *mockDB) Delete(options *WriteOptions, key []byte) error {
-	wb := NewWriteBatch(db.option)
+	wb := &WriteBatch{}
 	wb.Delete(key)
 
 	return db.Write(options, wb)
 }
 
 func (db *mockDB) Write(options *WriteOptions, batch *WriteBatch) error {
-	return db.vlog.Write(*options, batch)
+	ibatch := &writeBatchInternel{}
+	ibatch.Fill(batch)
+	return db.vlog.Write(ibatch)
 }
 
 func (db *mockDB) Get(options *ReadOptions, key []byte) (value []byte, err error) {
 	return db.filter(key).Value, nil
 }
 
-func (db *mockDB) NewIterator(options *ReadOptions) (iterator *Iterator, err error) {
+func (db *mockDB) NewIterator(options *ReadOptions) (iterator Iterator, err error) {
 	return nil, nil
 }
 
-func (db *mockDB) GetSnapshot() (snapshot *Snapshot, err error) {
-	return nil, nil
+func (db *mockDB) GetSnapshot() *Snapshot {
+	return nil
 }
 
-func (db *mockDB) GetExtend(options *ReadOptions, key []byte) (value EValue, err error) {
+func (db *mockDB) ReleaseSnapshot(snapshot *Snapshot) {
+
+}
+
+func (db *mockDB) GetExtend(options *ReadOptions, key []byte) (value *EValue, err error) {
 	return db.filter(key), nil
 }
 

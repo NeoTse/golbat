@@ -106,18 +106,22 @@ func OpenValueLog(option Options) (*valueLog, error) {
 		return nil, Wrapf(err, "While iteratring the last value log file: %s", last.path)
 	}
 
-	if err := last.Truncate(int64(offset)); err != nil {
-		return nil, Wrapf(err, "While truncating the last value log file: %s", last.path)
+	// the last value log file is not empty, truncate it and create a new one.
+	if offset > 0 {
+		if err := last.Truncate(int64(offset)); err != nil {
+			return nil, Wrapf(err, "While truncating the last value log file: %s", last.path)
+		}
+
+		if _, err := v.createValueLogFile(); err != nil {
+			return nil, Wrapf(err, "While creating a new last value log file")
+		}
 	}
 
-	if _, err := v.createValueLogFile(); err != nil {
-		return nil, Wrapf(err, "While creating a new last value log file")
-	}
-
+	// the last value log file is empty, reuse it.
 	return v, nil
 }
 
-func (v *valueLog) Write(option WriteOptions, batch *WriteBatch) error {
+func (v *valueLog) Write(batch *writeBatchInternel) error {
 	if err := v.validate(batch); err != nil {
 		return err
 	}
@@ -128,7 +132,7 @@ func (v *valueLog) Write(option WriteOptions, batch *WriteBatch) error {
 	v.filesLock.RUnlock()
 
 	defer func() {
-		if option.Sync {
+		if batch.sync {
 			if err := curLogFile.Sync(); err != nil {
 				v.logger.Errorf("Error Sync value log(%s): %+v", curLogFile.path, err)
 			}
@@ -140,7 +144,7 @@ func (v *valueLog) Write(option WriteOptions, batch *WriteBatch) error {
 	written := 0
 	// write every entry
 	buf := &bytes.Buffer{}
-	for _, e := range batch.entris {
+	for _, e := range batch.entries {
 		if e.checkWithThreshold(v.valueThreshold) {
 			batch.ptrs = append(batch.ptrs, valPtr{})
 			continue
@@ -357,7 +361,7 @@ func (v *valueLog) sortAndFilterFids() []uint32 {
 	return res
 }
 
-func (v *valueLog) validate(batch *WriteBatch) error {
+func (v *valueLog) validate(batch *writeBatchInternel) error {
 	offset := uint64(v.writeOffset())
 	estimatedVlogOffset := batch.ApproximateSize() + offset
 
@@ -516,8 +520,9 @@ func (v *valueLog) gcLogFile(lf *logFile, db DB) error {
 
 	v.logger.Infof("Gc value log: %d, path:%d", lf.fid, lf.path)
 	option := db.GetOption()
-	wb := NewWriteBatch(&option)
+	wb := NewWriteBatch(db)
 
+	var size uint32
 	var count, moved int
 	ropt := &ReadOptions{VerifyCheckSum: true}
 	filter := func(e *entry, _ valPtr) error {
@@ -542,7 +547,7 @@ func (v *valueLog) gcLogFile(lf *logFile, db DB) error {
 		}
 
 		// entry has been deleted. Discard.
-		if ev.Meta&Delete == 1 {
+		if ev.Meta&Delete == Delete {
 			return nil
 		}
 
@@ -562,8 +567,9 @@ func (v *valueLog) gcLogFile(lf *logFile, db DB) error {
 			ne.key = append(ne.key, e.key...)
 			ne.value = append(ne.value, e.value...)
 			ne.rtype = e.rtype &^ ValPtr
+			es := ne.estimateSize(uint32(option.ValueThreshold)) + uint32(len(ne.value))
 
-			if wb.IsFull() {
+			if wb.Count()+1 >= option.maxBatchCount || size+es >= uint32(option.maxBatchSize) {
 				if err := db.Write(writeOption, wb); err != nil {
 					return err
 				}
@@ -572,6 +578,7 @@ func (v *valueLog) gcLogFile(lf *logFile, db DB) error {
 			}
 
 			wb.Put(e.key, e.value)
+			size += es
 		}
 
 		return nil

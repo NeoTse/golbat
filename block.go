@@ -13,8 +13,6 @@ import (
 	"github.com/golbat/internel"
 )
 
-const intSize = int(unsafe.Sizeof(int(0)))
-
 type fileEntryHeader struct {
 	overlap uint16
 	diff    uint16
@@ -97,10 +95,6 @@ func (b *memBlock) decrRef() {
 	if atomic.AddInt32(&b.ref, -1) == 0 {
 		atomic.AddInt32(&NumMemBlocks, -1)
 	}
-}
-
-func (b *memBlock) size() int64 {
-	return int64(3*intSize + cap(b.data) + cap(b.checksum) + cap(b.entryOffsets)*4)
 }
 
 func (b *memBlock) verifyCheckSum() error {

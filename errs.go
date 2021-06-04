@@ -16,8 +16,15 @@ var (
 	ErrBadMagic             = errors.New("manifest has bad magic")
 	ErrMFUnsupportedVersion = errors.New("manifest has unsupported version")
 	ErrFillTable            = errors.New("unable to fill tables")
-	ErrNoRewrite            = errors.New("Value log GC attempt didn't result in any cleanup")
-	ErrRejected             = errors.New("Value log GC request rejected")
+	ErrNoRewrite            = errors.New("value log GC attempt didn't result in any cleanup")
+	ErrRejected             = errors.New("value log GC request rejected")
+	ErrValueLogSize         = errors.New("invalid ValueLogFileSize, must be in range [1MB, 2GB)")
+	ErrNoRoom               = errors.New("no room for write")
+	ErrDBClosed             = errors.New("DB Closed")
+	ErrBatchTooBig          = errors.New("batch is too big to fit into one batch write")
+	ErrKeyNotFound          = errors.New("key not found")
+	ErrEmptyKey             = errors.New("key cannot be empty")
+	ErrEmptyBatch           = errors.New("batch cannot be empty")
 )
 
 func Check(err error) {

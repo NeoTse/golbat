@@ -548,7 +548,7 @@ func NewTableBuilder(opts Options) *TableBuilder {
 	b.blkBuilder = &blockBuilder{curBlock: &fileBlock{}, opts: &opts}
 	b.fBlocks = &fileBlocks{}
 	b.opts = &opts
-	b.capacity = uint64(0.95 * float64(opts.TableSize))
+	b.capacity = uint64(0.95 * float64(opts.tableSize))
 
 	if opts.CompressionType == NoCompression {
 		return b

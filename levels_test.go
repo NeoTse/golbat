@@ -17,6 +17,22 @@ type keyValVersion struct {
 	meta    byte
 }
 
+var testOption = Options{
+	Logger:                  internel.DefaultLogger(internel.DEBUG),
+	NumLevelZeroTablesStall: 10,
+	MaxLevels:               10,
+	BaseLevelSize:           2 << 20,
+	BaseTableSize:           2 << 20,
+	MemTableSize:            1 << 20,
+	LevelSizeMultiplier:     10,
+	NumLevelZeroTables:      10,
+	NumCompactors:           1,
+	ValueLogFileSize:        2 << 20,
+	ValueLogMaxEntries:      1000,
+	ValueThreshold:          32 << 10,
+	comparator:              compareKeys,
+}
+
 func getLevels(numCompactors int) *levels {
 	dir, err := ioutil.TempDir("", "golbat-test")
 	if err != nil {
@@ -28,37 +44,24 @@ func getLevels(numCompactors int) *levels {
 		panic(err)
 	}
 
-	opts := &Options{
-		Dir:                     dir,
-		Logger:                  internel.DefaultLogger(internel.DEBUG),
-		NumLevelZeroTablesStall: 10,
-		MaxLevels:               10,
-		BaseLevelSize:           2 << 20,
-		BaseTableSize:           2 << 20,
-		MemTableSize:            1 << 20,
-		LevelSizeMultiplier:     10,
-		NumLevelZeroTables:      10,
-		NumCompactors:           numCompactors,
-		ValueLogDir:             vlogDir,
-		ValueLogFileSize:        2 << 20,
-		ValueLogMaxEntries:      1000,
-		ValueThreshold:          32 << 10,
-		comparator:              compareKeys,
-	}
+	opts := testOption
+	opts.Dir = dir
+	opts.NumCompactors = numCompactors
+	opts.ValueLogDir = vlogDir
 
 	mff, mf, err := OpenManifestFile(opts.Dir)
 	if err != nil {
 		panic(err)
 	}
 
-	vlog, err := OpenValueLog(*opts)
+	vlog, err := OpenValueLog(opts)
 	if err != nil {
 		mff.Close()
 		panic(err)
 	}
 
 	snapshots := newSnapshotList()
-	ls, err := NewLevels(opts, &mf, vlog, mff, snapshots)
+	ls, err := NewLevels(&opts, &mf, vlog, mff, snapshots)
 	if err != nil {
 		vlog.Close()
 		mff.Close()
@@ -164,8 +167,8 @@ func TestLevelsGet(t *testing.T) {
 			name: "More Versions",
 			levelData: map[int][][]keyValVersion{
 				0: {
-					{{"foo", "bar7", 7, 0}},
 					{{"foo", "bar5", 5, 0}},
+					{{"foo", "bar7", 7, 0}},
 				},
 				1: {
 					{{"foo", "bar3", 3, 0}, {"foo", "bar1", 1, 0}},
@@ -224,8 +227,9 @@ func TestCompaction(t *testing.T) {
 		defer ls.Close()
 		defer removeDir(ls.opts.Dir)
 
-		l0 := []keyValVersion{{"foo", "bar", 3, 0}, {"fooz", "baz", 1, 0}}
-		l01 := []keyValVersion{{"foo", "bar", 2, 0}}
+		// CAUTION: for tables from level 0, the newer table, the higher version
+		l0 := []keyValVersion{{"foo", "bar", 2, 0}, {"fooz", "baz", 1, 0}}
+		l01 := []keyValVersion{{"foo", "bar", 3, 0}}
 		l1 := []keyValVersion{{"foo", "bar", 1, 0}}
 
 		createAndOpenTable(ls, l0, 0)
@@ -293,8 +297,9 @@ func TestCompaction(t *testing.T) {
 		defer ls.Close()
 		defer removeDir(ls.opts.Dir)
 
-		l0 := []keyValVersion{{"foo", "bar", 4, 0}, {"fooz", "baz", 1, 0}}
-		l01 := []keyValVersion{{"foo", "bar", 3, 0}}
+		// CAUTION: for tables from level 0, the newer table, the higher version
+		l0 := []keyValVersion{{"foo", "bar", 3, 0}, {"fooz", "baz", 1, 0}}
+		l01 := []keyValVersion{{"foo", "bar", 4, 0}}
 		l1 := []keyValVersion{{"foo", "bar", 2, 0}}
 		l2 := []keyValVersion{{"foo", "bar", 1, 0}}
 		// Level 0 has table l0 and l01.
@@ -562,8 +567,9 @@ func TestDiscardVersion(t *testing.T) {
 		defer ls.Close()
 		defer removeDir(ls.opts.Dir)
 
-		l0 := []keyValVersion{{"foo", "bar", 4, 0}, {"fooz", "baz", 3, 0}}
-		l01 := []keyValVersion{{"foo", "bar", 3, 0}}
+		// CAUTION: for tables from level 0, the newer table, the higher version
+		l0 := []keyValVersion{{"foo", "bar", 3, 0}, {"fooz", "baz", 3, 0}}
+		l01 := []keyValVersion{{"foo", "bar", 4, 0}}
 		l1 := []keyValVersion{{"foo", "bar", 2, 0}}
 
 		createAndOpenTable(ls, l0, 0)
@@ -634,8 +640,9 @@ func TestDiscardVersion(t *testing.T) {
 		defer ls.Close()
 		defer removeDir(ls.opts.Dir)
 
-		l0 := []keyValVersion{{"foo", "bar", 4, 0}, {"fooz", "baz", 3, 0}}
-		l01 := []keyValVersion{{"foo", "bar", 3, 0}}
+		// CAUTION: for tables from level 0, the newer table, the higher version
+		l0 := []keyValVersion{{"foo", "bar", 3, 0}, {"fooz", "baz", 3, 0}}
+		l01 := []keyValVersion{{"foo", "bar", 4, 0}}
 		l1 := []keyValVersion{{"foo", "bar", 2, 0}}
 
 		createAndOpenTable(ls, l0, 0)

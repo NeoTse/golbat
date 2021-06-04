@@ -63,9 +63,7 @@ func TestValPtr(t *testing.T) {
 		offset: 100,
 	}
 
-	b := make([]byte, vptrSize)
-	sz := v.Encode(b, 0)
-	require.Equal(t, int(vptrSize), sz)
+	b := v.Encode()
 
 	v2 := v
 	v.Decode(b)

@@ -17,8 +17,9 @@ type memTable struct {
 	wal *logFile
 	buf *bytes.Buffer
 
-	option   Options
-	NewTable bool
+	option     Options
+	maxVersion uint64
+	NewTable   bool
 }
 
 func NewMemTable(id int, option Options) (*memTable, error) {
@@ -83,6 +84,9 @@ func (m *memTable) Put(key []byte, value EValue) error {
 	}
 
 	m.skl.Put(key, value.Encode())
+	if version := parseVersion(key); version > m.maxVersion {
+		m.maxVersion = version
+	}
 
 	return nil
 }
@@ -128,6 +132,9 @@ func (m *memTable) restore() walker {
 			Value: e.value,
 		}
 
+		if version := parseVersion(e.key); version > m.maxVersion {
+			m.maxVersion = version
+		}
 		m.skl.Put(e.key, ev.Encode())
 		return nil
 	}
@@ -138,8 +145,8 @@ func memTableFilePath(dir string, fid int) string {
 }
 
 func arenaSize(option Options) uint32 {
-	sz := int64(option.MemTableSize + option.MaxBatchSize +
-		option.MaxBatchCount*internel.MaxNodeSize)
+	sz := int64(option.MemTableSize + option.maxBatchSize +
+		option.maxBatchCount*internel.MaxNodeSize)
 
 	if sz > math.MaxUint32 {
 		panic(fmt.Sprintf("invalid size for arena: %d", sz))

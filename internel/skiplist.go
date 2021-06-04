@@ -107,7 +107,7 @@ func (s *Skiplist) Get(key []byte) []byte {
 	}
 
 	k := node.key(s.arena)
-	if !bytes.Equal(key, k) {
+	if !sameKey(key, k) {
 		return nil
 	}
 
@@ -181,7 +181,7 @@ func (s *Skiplist) findLessThan(target []byte) *node {
 	for {
 		next := s.getNext(curr, level)
 
-		if next != nil && bytes.Compare(next.key(s.arena), target) < 0 {
+		if next != nil && s.comparator(next.key(s.arena), target) < 0 {
 			curr = next
 		} else if level == 0 {
 			if curr == s.head {
@@ -202,7 +202,7 @@ func (s *Skiplist) findGreaterOrEqual(target []byte) *node {
 	for {
 		next := s.getNext(curr, level)
 
-		if next != nil && bytes.Compare(next.key(s.arena), target) < 0 {
+		if next != nil && s.comparator(next.key(s.arena), target) < 0 {
 			curr = next
 		} else if level == 0 {
 			return next
@@ -288,4 +288,19 @@ func (i *Iterator) SeekToLast() {
 func (i *Iterator) Close() error {
 	i.skl.Deref()
 	return nil
+}
+
+func sameKey(key1, key2 []byte) bool {
+	if len(key1) != len(key2) {
+		return false
+	}
+
+	return bytes.Equal(parseKey(key1), parseKey(key2))
+}
+
+func parseKey(key []byte) []byte {
+	if key == nil {
+		return nil
+	}
+	return key[:len(key)-8]
 }

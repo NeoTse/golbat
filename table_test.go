@@ -130,7 +130,7 @@ func TestTableBigValues(t *testing.T) {
 
 	n := 100 // Insert 100 keys.
 	opts := Options{CompressionType: ZSTDCompression, BlockSize: 4 * 1024, BloomFalsePositive: 0.01,
-		TableSize: uint64(n * 1 << 20)}
+		tableSize: uint64(n * 1 << 20)}
 	builder := NewTableBuilder(opts)
 
 	for i := 0; i < n; i++ {

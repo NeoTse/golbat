@@ -37,7 +37,7 @@ func (iter *TableIterator) DisableChecksum() {
 // Seek return the first entry that is >= input key from start (or <= input key if reverse enable)
 func (iter *TableIterator) Seek(key []byte) {
 	iter.seekFrom(key, restart)
-	if iter.reverse && !bytes.Equal(iter.Key(), key) {
+	if iter.reverse && !sameKey(iter.Key(), key) {
 		iter._prev()
 	}
 }
@@ -270,6 +270,10 @@ type TablesIterator struct {
 }
 
 func NewTablesIterator(tables []*Table, reverse bool) *TablesIterator {
+	if len(tables) == 0 {
+		return nil
+	}
+
 	iters := make([]*TableIterator, len(tables))
 
 	for i := 0; i < len(tables); i++ {

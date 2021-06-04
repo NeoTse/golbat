@@ -113,14 +113,6 @@ func (e *entry) checkWithThreshold(threshold uint32) bool {
 	return len(e.value) < int(threshold)
 }
 
-func (e *entry) withType(t byte) {
-	e.rtype |= t
-}
-
-func (e *entry) resetType(t byte) {
-	e.rtype = t
-}
-
 func (e *entry) isEmpty() bool {
 	return len(e.key) == 0
 }
@@ -185,10 +177,11 @@ type valPtr struct {
 const vptrSize = unsafe.Sizeof(valPtr{})
 
 // Encode encodes value Pointer into byte buffer.
-func (p valPtr) Encode(buf []byte, start uint32) int {
-	*(*valPtr)(unsafe.Pointer(&buf[start])) = p
+func (p valPtr) Encode() []byte {
+	buf := make([]byte, vptrSize)
+	*(*valPtr)(unsafe.Pointer(&buf[0])) = p
 
-	return int(vptrSize)
+	return buf
 }
 
 // Decode decodes the value pointer into the byte buffer.

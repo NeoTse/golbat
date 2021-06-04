@@ -210,7 +210,6 @@ func (l *level) GetValue(key []byte) (EValue, error) {
 		return value, decr()
 	}
 
-	maxVersion := parseVersion(key)
 	hash := internel.Hash(parseKey(key))
 	for _, table := range tables {
 		if table.DoesNotHave(hash) {
@@ -227,10 +226,9 @@ func (l *level) GetValue(key []byte) (EValue, error) {
 
 		matched := iter.Key()
 		if sameKey(key, matched) {
-			if version := parseVersion(matched); version <= maxVersion && value.version < version {
-				value = iter.ValueCopy()
-				value.version = version
-			}
+			value = iter.ValueCopy()
+			value.version = parseVersion(matched)
+			break
 		}
 	}
 
@@ -320,6 +318,24 @@ func (l *level) Validate() error {
 	}
 
 	return nil
+}
+
+func (l *level) appendIterators(iters []Iterator, option *ReadOptions) []Iterator {
+	l.RLock()
+	defer l.RUnlock()
+
+	if len(l.tables) == 0 {
+		return iters
+	}
+
+	if l.id == 0 {
+		// add in reverse order, because the newest table is in the end of l.tables
+		for i := len(l.tables) - 1; i >= 0; i-- {
+			iters = append(iters, l.tables[i].NewIterator(false))
+		}
+	}
+
+	return append(iters, NewTablesIterator(l.tables, false))
 }
 
 func decrRefs(tables []*Table) error {
