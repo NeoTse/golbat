@@ -1,6 +1,7 @@
 package golbat
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ func createIterators(data []keyValVersion) Iterator {
 	ti := &testIterator{valid: true}
 	for _, d := range data {
 		ti.data = append(ti.data, &testIteratorItem{
-			key:   keyWithVersion([]byte(d.key), d.version),
+			key:   KeyWithVersion([]byte(d.key), d.version),
 			value: []byte(d.val),
 			rtype: d.meta})
 	}
@@ -55,6 +56,7 @@ func createIterators(data []keyValVersion) Iterator {
 
 func iterateAndCheck(t *testing.T, iter *DBIterator, expected []keyValVersion, reverse bool) {
 	require.True(t, iter.Valid())
+	defer iter.Close()
 
 	start := func(iter Iterator) {
 		if reverse {
@@ -111,6 +113,28 @@ func TestForwardIterate(t *testing.T) {
 		iterateAndCheck(t, iter, expected, false)
 	})
 
+	t.Run("all version without delete", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Value},
+			{"fooa", "bar3", 3, Value},
+			{"foob", "bar1", 1, Value},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{AllVersion: true}, createIterators(data), 4)
+
+		expected := []keyValVersion{
+			{"foo", "bar4", 4, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar1", 1, Value},
+			{"fooa", "bar3", 3, Value},
+			{"foob", "bar1", 1, Value},
+		}
+
+		iterateAndCheck(t, iter, expected, false)
+	})
+
 	t.Run("without delete but limit version", func(t *testing.T) {
 		data := []keyValVersion{
 			{"foo", "bar1", 1, Value},
@@ -128,6 +152,33 @@ func TestForwardIterate(t *testing.T) {
 
 		expected := []keyValVersion{
 			{"foo", "bar4", 4, Value},
+			{"fooa", "bar3", 3, Value},
+			{"foob", "bar1", 1, Value},
+		}
+
+		iterateAndCheck(t, iter, expected, false)
+	})
+
+	t.Run("all version without delete but limit version", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Value},
+			{"foo", "bar5", 5, Value},
+			{"fooa", "bar3", 3, Value},
+			{"foob", "bar1", 1, Value},
+			{"fooc", "bar5", 5, Value},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{
+			Snapshot:   &Snapshot{version: 4},
+			AllVersion: true,
+		}, createIterators(data), 5)
+
+		expected := []keyValVersion{
+			{"foo", "bar4", 4, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar1", 1, Value},
 			{"fooa", "bar3", 3, Value},
 			{"foob", "bar1", 1, Value},
 		}
@@ -154,6 +205,30 @@ func TestForwardIterate(t *testing.T) {
 		iterateAndCheck(t, iter, expected, false)
 	})
 
+	t.Run("all version with delete", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Delete},
+			{"fooa", "bar3", 3, Delete},
+			{"fooa", "bar4", 4, Value},
+			{"foob", "bar1", 1, Delete},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{AllVersion: true}, createIterators(data), 4)
+
+		expected := []keyValVersion{
+			{"foo", "bar4", 4, Delete},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar1", 1, Value},
+			{"fooa", "bar4", 4, Value},
+			{"fooa", "bar3", 3, Delete},
+			{"foob", "bar1", 1, Delete},
+		}
+
+		iterateAndCheck(t, iter, expected, false)
+	})
+
 	t.Run("with delete and limit version", func(t *testing.T) {
 		data := []keyValVersion{
 			{"foo", "bar1", 1, Value},
@@ -170,6 +245,31 @@ func TestForwardIterate(t *testing.T) {
 
 		expected := []keyValVersion{
 			{"foo", "bar2", 2, Value},
+		}
+
+		iterateAndCheck(t, iter, expected, false)
+	})
+
+	t.Run("all version with delete and limit version", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Delete},
+			{"fooa", "bar3", 3, Delete},
+			{"fooa", "bar4", 4, Value},
+			{"foob", "bar1", 1, Delete},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{
+			Snapshot:   &Snapshot{version: 3},
+			AllVersion: true,
+		}, createIterators(data), 4)
+
+		expected := []keyValVersion{
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar1", 1, Value},
+			{"fooa", "bar3", 3, Delete},
+			{"foob", "bar1", 1, Delete},
 		}
 
 		iterateAndCheck(t, iter, expected, false)
@@ -200,6 +300,28 @@ func TestBackwardIterate(t *testing.T) {
 		iterateAndCheck(t, iter, expected, true)
 	})
 
+	t.Run("all version without delete", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Value},
+			{"fooa", "bar3", 3, Value},
+			{"foob", "bar1", 1, Value},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{AllVersion: true}, createIterators(data), 4)
+
+		expected := []keyValVersion{
+			{"foob", "bar1", 1, Value},
+			{"fooa", "bar3", 3, Value},
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Value},
+		}
+
+		iterateAndCheck(t, iter, expected, true)
+	})
+
 	t.Run("without delete but limit version", func(t *testing.T) {
 		data := []keyValVersion{
 			{"foo", "bar1", 1, Value},
@@ -224,6 +346,33 @@ func TestBackwardIterate(t *testing.T) {
 		iterateAndCheck(t, iter, expected, true)
 	})
 
+	t.Run("all version without delete but limit version", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Value},
+			{"foo", "bar5", 5, Value},
+			{"fooa", "bar3", 3, Value},
+			{"foob", "bar1", 1, Value},
+			{"fooc", "bar5", 5, Value},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{
+			Snapshot:   &Snapshot{version: 4},
+			AllVersion: true,
+		}, createIterators(data), 5)
+
+		expected := []keyValVersion{
+			{"foob", "bar1", 1, Value},
+			{"fooa", "bar3", 3, Value},
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Value},
+		}
+
+		iterateAndCheck(t, iter, expected, true)
+	})
+
 	t.Run("with delete", func(t *testing.T) {
 		data := []keyValVersion{
 			{"foo", "bar1", 1, Value},
@@ -238,6 +387,30 @@ func TestBackwardIterate(t *testing.T) {
 
 		expected := []keyValVersion{
 			{"fooa", "bar4", 4, Value},
+		}
+
+		iterateAndCheck(t, iter, expected, true)
+	})
+
+	t.Run("all version with delete", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Delete},
+			{"fooa", "bar3", 3, Delete},
+			{"fooa", "bar4", 4, Value},
+			{"foob", "bar1", 1, Delete},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{AllVersion: true}, createIterators(data), 4)
+
+		expected := []keyValVersion{
+			{"foob", "bar1", 1, Delete},
+			{"fooa", "bar3", 3, Delete},
+			{"fooa", "bar4", 4, Value},
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Delete},
 		}
 
 		iterateAndCheck(t, iter, expected, true)
@@ -263,6 +436,31 @@ func TestBackwardIterate(t *testing.T) {
 
 		iterateAndCheck(t, iter, expected, true)
 	})
+
+	t.Run("all version with delete and limit version", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Delete},
+			{"fooa", "bar3", 3, Delete},
+			{"fooa", "bar4", 4, Value},
+			{"foob", "bar1", 1, Delete},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{
+			Snapshot:   &Snapshot{version: 3},
+			AllVersion: true,
+		}, createIterators(data), 4)
+
+		expected := []keyValVersion{
+			{"foob", "bar1", 1, Delete},
+			{"fooa", "bar3", 3, Delete},
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+		}
+
+		iterateAndCheck(t, iter, expected, true)
+	})
 }
 
 func TestForwardAndBackwardIterate(t *testing.T) {
@@ -277,34 +475,69 @@ func TestForwardAndBackwardIterate(t *testing.T) {
 		{"foob", "bar1", 1, Delete},
 	}
 
-	iter := NewDBIterator(db, &ReadOptions{}, createIterators(data), 4)
+	t.Run("recent version", func(t *testing.T) {
+		iter := NewDBIterator(db, &ReadOptions{}, createIterators(data), 4)
+		defer iter.Close()
 
-	iter.SeekToFirst()
-	require.True(t, iter.Valid())
-	v := iter.Value()
-	require.Equal(t, "foo", string(iter.Key()))
-	require.Equal(t, "bar4", string(v.Value))
-	require.Equal(t, uint64(4), v.version)
-	require.Equal(t, Value, v.Meta)
+		iter.SeekToFirst()
+		require.True(t, iter.Valid())
+		v := iter.Value()
+		require.Equal(t, "foo", string(iter.Key()))
+		require.Equal(t, "bar4", string(v.Value))
+		require.Equal(t, uint64(4), v.version)
+		require.Equal(t, Value, v.Meta)
 
-	iter.Next()
-	require.True(t, iter.Valid())
-	v = iter.Value()
-	require.Equal(t, "fooa", string(iter.Key()))
-	require.Equal(t, "bar3", string(v.Value))
-	require.Equal(t, uint64(3), v.version)
-	require.Equal(t, Value, v.Meta)
+		iter.Next()
+		require.True(t, iter.Valid())
+		v = iter.Value()
+		require.Equal(t, "fooa", string(iter.Key()))
+		require.Equal(t, "bar3", string(v.Value))
+		require.Equal(t, uint64(3), v.version)
+		require.Equal(t, Value, v.Meta)
 
-	iter.Prev()
-	require.True(t, iter.Valid())
-	v = iter.Value()
-	require.Equal(t, "foo", string(iter.Key()))
-	require.Equal(t, "bar4", string(v.Value))
-	require.Equal(t, uint64(4), v.version)
-	require.Equal(t, Value, v.Meta)
+		iter.Prev()
+		require.True(t, iter.Valid())
+		v = iter.Value()
+		require.Equal(t, "foo", string(iter.Key()))
+		require.Equal(t, "bar4", string(v.Value))
+		require.Equal(t, uint64(4), v.version)
+		require.Equal(t, Value, v.Meta)
 
-	iter.Prev()
-	require.False(t, iter.Valid())
+		iter.Prev()
+		require.False(t, iter.Valid())
+	})
+
+	t.Run("all version", func(t *testing.T) {
+		iter := NewDBIterator(db, &ReadOptions{AllVersion: true}, createIterators(data), 4)
+		defer iter.Close()
+
+		iter.SeekToFirst()
+		require.True(t, iter.Valid())
+		v := iter.Value()
+		require.Equal(t, "foo", string(iter.Key()))
+		require.Equal(t, "bar4", string(v.Value))
+		require.Equal(t, uint64(4), v.version)
+		require.Equal(t, Value, v.Meta)
+
+		iter.Next()
+		require.True(t, iter.Valid())
+		v = iter.Value()
+		require.Equal(t, "foo", string(iter.Key()))
+		require.Equal(t, "bar2", string(v.Value))
+		require.Equal(t, uint64(2), v.version)
+		require.Equal(t, Delete, v.Meta)
+
+		iter.Prev()
+		require.True(t, iter.Valid())
+		v = iter.Value()
+		require.Equal(t, "foo", string(iter.Key()))
+		require.Equal(t, "bar4", string(v.Value))
+		require.Equal(t, uint64(4), v.version)
+		require.Equal(t, Value, v.Meta)
+
+		iter.Prev()
+		require.False(t, iter.Valid())
+	})
 }
 
 func TestSeek(t *testing.T) {
@@ -321,6 +554,7 @@ func TestSeek(t *testing.T) {
 		}
 
 		iter := NewDBIterator(db, &ReadOptions{}, createIterators(data), 4)
+		defer iter.Close()
 
 		skey := []byte("foo")
 		iter.Seek(skey)
@@ -344,6 +578,57 @@ func TestSeek(t *testing.T) {
 		require.False(t, iter.Valid())
 	})
 
+	t.Run("All version without delete", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Value},
+			{"fooa", "bar3", 3, Value},
+			{"foob", "bar1", 1, Value},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{AllVersion: true}, createIterators(data), 4)
+		defer iter.Close()
+
+		skey := []byte("foo")
+		expected := []keyValVersion{
+			{"foo", "bar4", 4, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar1", 1, Value},
+		}
+		iter.Seek(skey)
+		require.True(t, iter.Valid())
+		var count int
+		for ; iter.Valid(); iter.Next() {
+			k := iter.Key()
+			v := iter.Value()
+			if !bytes.Equal(k, skey) {
+				break
+			}
+
+			require.Equal(t, expected[count].key, string(k))
+			require.Equal(t, expected[count].val, string(v.Value))
+			require.Equal(t, expected[count].version, v.version)
+			require.Equal(t, expected[count].meta, v.Meta)
+
+			count++
+		}
+		require.True(t, iter.Valid())
+		require.Equal(t, 3, count)
+
+		skey = []byte("foob")
+		iter.Seek(skey)
+		require.True(t, iter.Valid())
+		v := iter.Value()
+		require.Equal(t, "foob", string(iter.Key()))
+		require.Equal(t, "bar1", string(v.Value))
+		require.Equal(t, uint64(1), v.version)
+		require.Equal(t, Value, v.Meta)
+
+		iter.Next()
+		require.False(t, iter.Valid())
+	})
+
 	t.Run("without delete but version limit", func(t *testing.T) {
 		data := []keyValVersion{
 			{"foo", "bar1", 1, Value},
@@ -356,6 +641,7 @@ func TestSeek(t *testing.T) {
 		iter := NewDBIterator(db, &ReadOptions{
 			Snapshot: &Snapshot{version: 3},
 		}, createIterators(data), 4)
+		defer iter.Close()
 
 		skey := []byte("foo")
 		iter.Seek(skey)
@@ -365,6 +651,51 @@ func TestSeek(t *testing.T) {
 		require.Equal(t, "bar2", string(v.Value))
 		require.Equal(t, uint64(2), v.version)
 		require.Equal(t, Value, v.Meta)
+
+		skey = []byte("fooa")
+		iter.Seek(skey)
+		require.False(t, iter.Valid())
+	})
+
+	t.Run("all version without delete but version limit", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Value},
+			{"fooa", "bar4", 4, Value},
+			{"foob", "bar1", 1, Value},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{
+			Snapshot:   &Snapshot{version: 3},
+			AllVersion: true,
+		}, createIterators(data), 4)
+		defer iter.Close()
+
+		skey := []byte("foo")
+		expected := []keyValVersion{
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar1", 1, Value},
+		}
+		iter.Seek(skey)
+		require.True(t, iter.Valid())
+		var count int
+		for ; iter.Valid(); iter.Next() {
+			k := iter.Key()
+			v := iter.Value()
+			if !bytes.Equal(k, skey) {
+				break
+			}
+
+			require.Equal(t, expected[count].key, string(k))
+			require.Equal(t, expected[count].val, string(v.Value))
+			require.Equal(t, expected[count].version, v.version)
+			require.Equal(t, expected[count].meta, v.Meta)
+
+			count++
+		}
+		require.True(t, iter.Valid())
+		require.Equal(t, 2, count)
 
 		skey = []byte("fooa")
 		iter.Seek(skey)
@@ -382,6 +713,7 @@ func TestSeek(t *testing.T) {
 		}
 
 		iter := NewDBIterator(db, &ReadOptions{}, createIterators(data), 4)
+		defer iter.Close()
 
 		skey := []byte("foo")
 		iter.Seek(skey)
@@ -397,6 +729,55 @@ func TestSeek(t *testing.T) {
 		require.False(t, iter.Valid())
 	})
 
+	t.Run("all version with delete", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Delete},
+			{"fooa", "bar3", 3, Delete},
+			{"fooa", "bar4", 4, Value},
+			{"foob", "bar1", 1, Delete},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{AllVersion: true}, createIterators(data), 4)
+		defer iter.Close()
+
+		skey := []byte("foo")
+		expected := []keyValVersion{
+			{"foo", "bar4", 4, Delete},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar1", 1, Value},
+		}
+		iter.Seek(skey)
+		require.True(t, iter.Valid())
+		var count int
+		for ; iter.Valid(); iter.Next() {
+			k := iter.Key()
+			v := iter.Value()
+			if !bytes.Equal(k, skey) {
+				break
+			}
+
+			require.Equal(t, expected[count].key, string(k))
+			require.Equal(t, expected[count].val, string(v.Value))
+			require.Equal(t, expected[count].version, v.version)
+			require.Equal(t, expected[count].meta, v.Meta)
+
+			count++
+		}
+		require.True(t, iter.Valid())
+		require.Equal(t, 3, count)
+
+		skey = []byte("foob")
+		iter.Seek(skey)
+		require.True(t, iter.Valid())
+		v := iter.Value()
+		require.Equal(t, "foob", string(iter.Key()))
+		require.Equal(t, "bar1", string(v.Value))
+		require.Equal(t, uint64(1), v.version)
+		require.Equal(t, Delete, v.Meta)
+	})
+
 	t.Run("with delete and limit version", func(t *testing.T) {
 		data := []keyValVersion{
 			{"foo", "bar1", 1, Value},
@@ -410,6 +791,7 @@ func TestSeek(t *testing.T) {
 		iter := NewDBIterator(db, &ReadOptions{
 			Snapshot: &Snapshot{version: 3},
 		}, createIterators(data), 4)
+		defer iter.Close()
 
 		skey := []byte("foo")
 		iter.Seek(skey)
@@ -428,6 +810,66 @@ func TestSeek(t *testing.T) {
 		iter.Seek(skey)
 		require.False(t, iter.Valid())
 	})
+
+	t.Run("all version with delete and limit version", func(t *testing.T) {
+		data := []keyValVersion{
+			{"foo", "bar1", 1, Value},
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar4", 4, Delete},
+			{"fooa", "bar3", 3, Delete},
+			{"fooa", "bar4", 4, Value},
+			{"foob", "bar1", 1, Delete},
+		}
+
+		iter := NewDBIterator(db, &ReadOptions{
+			Snapshot:   &Snapshot{version: 3},
+			AllVersion: true,
+		}, createIterators(data), 4)
+		defer iter.Close()
+
+		skey := []byte("foo")
+		expected := []keyValVersion{
+			{"foo", "bar2", 2, Value},
+			{"foo", "bar1", 1, Value},
+		}
+		iter.Seek(skey)
+		require.True(t, iter.Valid())
+		var count int
+		for ; iter.Valid(); iter.Next() {
+			k := iter.Key()
+			v := iter.Value()
+			if !bytes.Equal(k, skey) {
+				break
+			}
+
+			require.Equal(t, expected[count].key, string(k))
+			require.Equal(t, expected[count].val, string(v.Value))
+			require.Equal(t, expected[count].version, v.version)
+			require.Equal(t, expected[count].meta, v.Meta)
+
+			count++
+		}
+		require.True(t, iter.Valid())
+		require.Equal(t, count, 2)
+
+		skey = []byte("fooa")
+		iter.Seek(skey)
+		require.True(t, iter.Valid())
+		v := iter.Value()
+		require.Equal(t, "fooa", string(iter.Key()))
+		require.Equal(t, "bar3", string(v.Value))
+		require.Equal(t, uint64(3), v.version)
+		require.Equal(t, Delete, v.Meta)
+
+		skey = []byte("foob")
+		iter.Seek(skey)
+		require.True(t, iter.Valid())
+		v = iter.Value()
+		require.Equal(t, "foob", string(iter.Key()))
+		require.Equal(t, "bar1", string(v.Value))
+		require.Equal(t, uint64(1), v.version)
+		require.Equal(t, Delete, v.Meta)
+	})
 }
 
 type testIteratorItem struct {
@@ -437,7 +879,7 @@ type testIteratorItem struct {
 }
 
 func (tii *testIteratorItem) compare(other *testIteratorItem) int {
-	return compareKeys(tii.key, other.key)
+	return CompareKeys(tii.key, other.key)
 }
 
 type testIterator struct {
@@ -456,10 +898,10 @@ func (ti *testIterator) Seek(key []byte) {
 	n := len(ti.data)
 
 	found := sort.Search(n, func(i int) bool {
-		return compareKeys(ti.data[i].key, key) >= 0
+		return CompareKeys(ti.data[i].key, key) >= 0
 	})
 
-	if found == n || !sameKey(ti.data[found].key, key) {
+	if found == n || !SameKey(ti.data[found].key, key) {
 		ti.valid = false
 		return
 	}
@@ -514,7 +956,7 @@ func (ti *testIterator) Value() EValue {
 
 	v.Value = curr.value
 	v.Meta = curr.rtype
-	v.version = parseVersion(curr.key)
+	v.version = ParseVersion(curr.key)
 
 	return v
 }

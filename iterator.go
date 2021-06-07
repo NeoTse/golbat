@@ -24,14 +24,14 @@ type DBIterator struct {
 
 	iters   Iterator
 	currKey []byte
-	item    *item
+	item    *Item
 
 	closed     bool
 	valid      bool
 	reverse    bool
 	maxVersion uint64
 
-	err error
+	Err error
 }
 
 func NewDBIterator(db *DBImpl, option *ReadOptions, iters Iterator, version uint64) *DBIterator {
@@ -55,7 +55,7 @@ func NewDBIterator(db *DBImpl, option *ReadOptions, iters Iterator, version uint
 func (it *DBIterator) Seek(key []byte) {
 	it.reverse = false
 	it.item = nil
-	it.currKey = keyWithVersion(key, it.maxVersion)
+	it.currKey = KeyWithVersion(key, it.maxVersion)
 	it.iters.Seek(it.currKey)
 	if it.iters.Valid() {
 		it.findNextUserEntry(false, &it.currKey)
@@ -85,6 +85,7 @@ func (it *DBIterator) SeekToLast() {
 	it.item = nil
 
 	it.iters.SeekToLast()
+
 	it.findPrevUserEntry()
 }
 
@@ -110,7 +111,7 @@ func (it *DBIterator) Next() {
 			return
 		}
 	} else {
-		item := it.getItem()
+		item := it.GetItem()
 		it.currKey = safeCopy(it.currKey, item.key)
 
 		it.iters.Next()
@@ -131,7 +132,7 @@ func (it *DBIterator) Prev() {
 	}
 
 	if !it.reverse {
-		item := it.getItem()
+		item := it.GetItem()
 		it.currKey = safeCopy(it.currKey, it.item.key)
 
 		for {
@@ -144,14 +145,16 @@ func (it *DBIterator) Prev() {
 				return
 			}
 
-			if !bytes.Equal(item.key, it.currKey) {
+			if it.option.AllVersion || !bytes.Equal(item.key, it.currKey) {
 				break
 			}
 
-			item = it.getItem()
+			item = it.GetItem()
 		}
 
 		it.reverse = true
+	} else if it.option.AllVersion {
+		it.iters.Prev()
 	}
 
 	it.findPrevUserEntry()
@@ -166,7 +169,7 @@ func (it *DBIterator) Key() []byte {
 	if it.reverse {
 		return it.currKey
 	} else {
-		it.item = it.getItem()
+		it.item = it.GetItem()
 		return it.item.key
 	}
 }
@@ -178,7 +181,7 @@ func (it *DBIterator) Value() EValue {
 	}
 
 	if !it.reverse {
-		it.item = it.getItem()
+		it.item = it.GetItem()
 	}
 
 	if err := it.readFromVlog(it.item); err != nil {
@@ -188,7 +191,7 @@ func (it *DBIterator) Value() EValue {
 	return EValue{Value: it.item.value, Meta: it.item.rtype, version: it.item.version}
 }
 
-func (it *DBIterator) readFromVlog(item *item) error {
+func (it *DBIterator) readFromVlog(item *Item) error {
 	if item.rtype&ValPtr == 0 {
 		return nil
 	}
@@ -197,7 +200,7 @@ func (it *DBIterator) readFromVlog(item *item) error {
 	if err != nil {
 		it.db.option.Logger.Errorf("Unable to read from vlog: Key: %v, Version : %v, meta: %v"+
 			" Error: %v", item.key, item.version, item.rtype, err)
-		it.err = err
+		it.Err = err
 		return err
 	}
 
@@ -213,25 +216,30 @@ func (it *DBIterator) Valid() bool {
 // Close will close this iterator, if it not closed. Otherwise, do nothing
 func (it *DBIterator) Close() error {
 	if it.closed {
-		return it.err
+		return it.Err
 	}
 
+	it.valid = false
 	it.closed = true
-	it.err = it.iters.Close()
+	it.Err = it.iters.Close()
 
-	if err := it.db.vlog.decrIteratorCount(); it.err == nil {
-		it.err = err
+	if err := it.db.vlog.decrIteratorCount(); it.Err == nil {
+		it.Err = err
 	}
 
-	return it.err
+	return it.Err
 }
 
 // findNextUserEntry get the next entry that not deleted
 // and its version is max but not greater than maxVersion
 func (it *DBIterator) findNextUserEntry(skipping bool, skip *[]byte) {
 	for ; it.iters.Valid(); it.iters.Next() {
-		item := it.getItem()
+		item := it.GetItem()
 		if item != nil && item.version <= it.maxVersion {
+			if it.option.AllVersion {
+				return
+			}
+
 			switch item.rtype &^ ValPtr {
 			case Delete:
 				skipping = true
@@ -256,8 +264,14 @@ func (it *DBIterator) findNextUserEntry(skipping bool, skip *[]byte) {
 func (it *DBIterator) findPrevUserEntry() {
 	t := Delete
 	for ; it.iters.Valid(); it.iters.Prev() {
-		item := it.getItem()
+		item := it.GetItem()
 		if item != nil && item.version <= it.maxVersion {
+			if it.option.AllVersion {
+				it.currKey = safeCopy(it.currKey, item.key)
+				it.item = item
+				return
+			}
+
 			if t != Delete && !bytes.Equal(item.key, it.currKey) {
 				break
 			}
@@ -285,7 +299,7 @@ func (it *DBIterator) findPrevUserEntry() {
 	}
 }
 
-type item struct {
+type Item struct {
 	key     []byte
 	value   []byte
 	rtype   byte
@@ -294,16 +308,44 @@ type item struct {
 	vp valPtr
 }
 
-func (it *DBIterator) getItem() *item {
+func (item *Item) Key() []byte {
+	return item.key
+}
+
+func (item *Item) KeyCopy(dst []byte) []byte {
+	return safeCopy(dst, item.key)
+}
+
+func (item *Item) Value() []byte {
+	return item.value
+}
+
+func (item *Item) ValueCopy(dst []byte) []byte {
+	return safeCopy(dst, item.value)
+}
+
+func (item *Item) Version() uint64 {
+	return item.version
+}
+
+func (item *Item) Deleted() bool {
+	return item.rtype&Delete == Delete
+}
+
+func (item *Item) InValueLog() bool {
+	return item.rtype&ValPtr == ValPtr
+}
+
+func (it *DBIterator) GetItem() *Item {
 	if !it.valid || !it.iters.Valid() {
 		return nil
 	}
 
-	var item item
+	var item Item
 
 	rawKey := it.iters.Key()
-	item.key = parseKey(rawKey)
-	item.version = parseVersion(rawKey)
+	item.key = ParseKey(rawKey)
+	item.version = ParseVersion(rawKey)
 
 	rawVal := it.iters.Value()
 	item.rtype = rawVal.Meta

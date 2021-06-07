@@ -70,6 +70,7 @@ type ReadOptions struct {
 	VerifyCheckSum bool
 	FillCache      bool // current doesn't support
 	Snapshot       *Snapshot
+	AllVersion     bool // return all version value of key, no matter if it deleted
 }
 
 type WriteOptions struct {
@@ -103,7 +104,7 @@ func DefaultOptions(dir string) Options {
 		CompressionType:      SnappyCompression,
 		ZSTDCompressionLevel: 1,
 
-		comparator: compareKeys,
+		comparator: CompareKeys,
 		Logger:     internel.DefaultLogger(internel.INFO),
 	}
 }
