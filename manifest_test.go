@@ -50,19 +50,19 @@ func TestManifestApply(t *testing.T) {
 	expectedManifest := NewManifest()
 	expectedManifest.creations = 5
 	expectedManifest.deletions = 2
-	expectedManifest.levels = []levelsManifest{
+	expectedManifest.Levels = []levelsManifest{
 		{
-			tables: map[uint64]struct{}{},
+			Tables: map[uint64]struct{}{},
 		},
 		{
-			tables: map[uint64]struct{}{
+			Tables: map[uint64]struct{}{
 				1: {},
 				2: {},
 				3: {},
 			},
 		},
 	}
-	expectedManifest.tables = map[uint64]tableManifest{
+	expectedManifest.Tables = map[uint64]tableManifest{
 		1: {level: 1, compression: ZSTDCompression},
 		2: {level: 1, compression: ZSTDCompression},
 		3: {level: 1, compression: ZSTDCompression},

@@ -143,7 +143,7 @@ func (b *writeBatchInternel) Fill(wb *WriteBatch) {
 
 	for i, e := range wb.entries {
 		b.entries[i] = &entry{
-			key:   keyWithVersion(e.key, b.version),
+			key:   KeyWithVersion(e.key, b.version),
 			value: e.value,
 			rtype: e.rtype,
 		}
@@ -188,7 +188,7 @@ func (b *writeBatchInternel) setVersion(s uint64) {
 	b.version = s
 }
 
-func keyWithVersion(key []byte, version uint64) []byte {
+func KeyWithVersion(key []byte, version uint64) []byte {
 	res := make([]byte, len(key)+8)
 	copy(res, key)
 	binary.BigEndian.PutUint64(res[len(key):], version)
@@ -196,7 +196,7 @@ func keyWithVersion(key []byte, version uint64) []byte {
 	return res
 }
 
-func parseVersion(key []byte) uint64 {
+func ParseVersion(key []byte) uint64 {
 	if len(key) < 8 {
 		return 0
 	}
@@ -204,24 +204,24 @@ func parseVersion(key []byte) uint64 {
 	return binary.BigEndian.Uint64(key[len(key)-8:])
 }
 
-func parseKey(key []byte) []byte {
+func ParseKey(key []byte) []byte {
 	if key == nil {
 		return nil
 	}
 	return key[:len(key)-8]
 }
 
-func sameKey(key1, key2 []byte) bool {
+func SameKey(key1, key2 []byte) bool {
 	if len(key1) != len(key2) {
 		return false
 	}
 
-	return bytes.Equal(parseKey(key1), parseKey(key2))
+	return bytes.Equal(ParseKey(key1), ParseKey(key2))
 }
 
 // first compare keys by increasing order, then compare sequence number by decreasing order
-func compareKeys(a, b []byte) int {
-	if cmp := bytes.Compare(parseKey(a), parseKey(b)); cmp != 0 {
+func CompareKeys(a, b []byte) int {
+	if cmp := bytes.Compare(ParseKey(a), ParseKey(b)); cmp != 0 {
 		return cmp
 	}
 

@@ -40,8 +40,8 @@ func getKeyRange(tables ...*Table) keyRange {
 	// pick all the versions of the smallest and the biggest key. Note that version zero would
 	// be the rightmost key, considering versions are default sorted in descending order.
 	return keyRange{
-		left:       keyWithVersion(parseKey(smallest), math.MaxUint64),
-		right:      keyWithVersion(parseKey(biggest), 0),
+		left:       KeyWithVersion(ParseKey(smallest), math.MaxUint64),
+		right:      KeyWithVersion(ParseKey(biggest), 0),
 		comparator: comparator,
 	}
 }

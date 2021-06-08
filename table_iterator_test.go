@@ -17,7 +17,7 @@ func checkIteratorResult(t *testing.T, table *Table, n int, reverse bool) {
 	}
 
 	for iter.SeekToFirst(); iter.Valid(); iter.Next() {
-		k := keyWithVersion([]byte(key("key", count)), 0)
+		k := KeyWithVersion([]byte(key("key", count)), 0)
 		v := fmt.Sprintf("%d", count)
 
 		require.EqualValues(t, k, iter.Key())
@@ -80,14 +80,14 @@ func TestTableIteratorSeek(t *testing.T) {
 		}
 
 		for _, cas := range cases {
-			iter.Seek(keyWithVersion([]byte(cas.in), 0))
+			iter.Seek(KeyWithVersion([]byte(cas.in), 0))
 			if !cas.valid {
 				require.False(t, iter.Valid())
 				continue
 			}
 
 			require.True(t, iter.Valid())
-			k := parseKey(iter.Key())
+			k := ParseKey(iter.Key())
 			require.EqualValues(t, cas.out, string(k))
 			require.EqualValues(t, cas.oval, iter.Value().Value)
 		}
@@ -108,14 +108,14 @@ func TestTableIteratorSeek(t *testing.T) {
 		}
 
 		for _, cas := range cases {
-			iter.Seek(keyWithVersion([]byte(cas.in), 0))
+			iter.Seek(KeyWithVersion([]byte(cas.in), 0))
 			if !cas.valid {
 				require.False(t, iter.Valid())
 				continue
 			}
 
 			require.True(t, iter.Valid())
-			k := parseKey(iter.Key())
+			k := ParseKey(iter.Key())
 			require.EqualValues(t, cas.out, string(k))
 			require.EqualValues(t, cas.oval, iter.Value().Value)
 		}
@@ -131,7 +131,7 @@ func TestUniIterator(t *testing.T) {
 		defer iter.Close()
 		count := 0
 		for iter.SeekToFirst(); iter.Valid(); iter.Next() {
-			k := keyWithVersion([]byte(key("key", count)), 0)
+			k := KeyWithVersion([]byte(key("key", count)), 0)
 			v := fmt.Sprintf("%d", count)
 
 			require.EqualValues(t, k, iter.Key())
@@ -145,7 +145,7 @@ func TestUniIterator(t *testing.T) {
 		defer iter.Close()
 		count := 10000
 		for iter.SeekToFirst(); iter.Valid(); iter.Next() {
-			k := keyWithVersion([]byte(key("key", count-1)), 0)
+			k := KeyWithVersion([]byte(key("key", count-1)), 0)
 			v := fmt.Sprintf("%d", count-1)
 
 			require.EqualValues(t, k, iter.Key())
@@ -171,7 +171,7 @@ func TestTablesIteratorOneTable(t *testing.T) {
 	iter.SeekToFirst()
 	require.True(t, iter.Valid())
 
-	require.EqualValues(t, "k1", string(parseKey(iter.currIter.Key())))
+	require.EqualValues(t, "k1", string(ParseKey(iter.currIter.Key())))
 	require.EqualValues(t, "a1", string(iter.Value().Value))
 }
 
@@ -196,7 +196,7 @@ func TestTablesIterator(t *testing.T) {
 				bs[3] += 1
 				prefix = string(bs)
 			}
-			k := keyWithVersion([]byte(key(prefix, count%10000)), 0)
+			k := KeyWithVersion([]byte(key(prefix, count%10000)), 0)
 			v := fmt.Sprintf("%d", count%10000)
 
 			require.EqualValues(t, k, iter.Key())
@@ -213,14 +213,14 @@ func TestTablesIterator(t *testing.T) {
 		}
 
 		for _, cas := range cases {
-			iter.Seek(keyWithVersion([]byte(cas.in), 0))
+			iter.Seek(KeyWithVersion([]byte(cas.in), 0))
 			if !cas.valid {
 				require.False(t, iter.Valid())
 				continue
 			}
 
 			require.True(t, iter.Valid())
-			k := parseKey(iter.Key())
+			k := ParseKey(iter.Key())
 			require.EqualValues(t, cas.out, string(k))
 			require.EqualValues(t, cas.oval, iter.Value().Value)
 		}
@@ -238,7 +238,7 @@ func TestTablesIterator(t *testing.T) {
 				bs[3] -= 1
 				prefix = string(bs)
 			}
-			k := keyWithVersion([]byte(key(prefix, (count-1)%10000)), 0)
+			k := KeyWithVersion([]byte(key(prefix, (count-1)%10000)), 0)
 			v := fmt.Sprintf("%d", (count-1)%10000)
 
 			require.EqualValues(t, k, iter.Key())
@@ -255,14 +255,14 @@ func TestTablesIterator(t *testing.T) {
 		}
 
 		for _, cas := range cases {
-			iter.Seek(keyWithVersion([]byte(cas.in), 0))
+			iter.Seek(KeyWithVersion([]byte(cas.in), 0))
 			if !cas.valid {
 				require.False(t, iter.Valid())
 				continue
 			}
 
 			require.True(t, iter.Valid())
-			k := parseKey(iter.Key())
+			k := ParseKey(iter.Key())
 			require.EqualValues(t, cas.out, string(k))
 			require.EqualValues(t, cas.oval, iter.Value().Value)
 		}
@@ -291,7 +291,7 @@ func checkMergeResult(t *testing.T, opts *Options, t1, t2 *Table, expected []exp
 		k := it.Key()
 		vs := it.Value()
 
-		require.EqualValues(t, expected[count].key, string(parseKey(k)))
+		require.EqualValues(t, expected[count].key, string(ParseKey(k)))
 		require.EqualValues(t, expected[count].value, string(vs.Value))
 		count++
 	}
@@ -410,7 +410,7 @@ func TestTablesMergeIteratorSeek(t *testing.T) {
 	defer t1.DecrRef()
 	defer t2.DecrRef()
 
-	seekKey := keyWithVersion([]byte("k3"), 0)
+	seekKey := KeyWithVersion([]byte("k3"), 0)
 
 	t.Run("forward", func(t *testing.T) {
 		expected := []expectedResult{
@@ -483,7 +483,7 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 			k := it.Key()
 			vs := it.Value()
 
-			require.EqualValues(t, expected[count].key, string(parseKey(k)))
+			require.EqualValues(t, expected[count].key, string(ParseKey(k)))
 			require.EqualValues(t, expected[count].value, string(vs.Value))
 			count++
 		}
@@ -498,14 +498,14 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 		}
 
 		for _, cas := range cases {
-			it.Seek(keyWithVersion([]byte(cas.in), 0))
+			it.Seek(KeyWithVersion([]byte(cas.in), 0))
 			if !cas.valid {
 				require.False(t, it.Valid())
 				continue
 			}
 
 			require.True(t, it.Valid())
-			k := parseKey(it.Key())
+			k := ParseKey(it.Key())
 			require.EqualValues(t, cas.out, string(k))
 			require.EqualValues(t, cas.oval, it.Value().Value)
 		}
@@ -537,7 +537,7 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 			k := it.Key()
 			vs := it.Value()
 
-			require.EqualValues(t, expected[count].key, string(parseKey(k)))
+			require.EqualValues(t, expected[count].key, string(ParseKey(k)))
 			require.EqualValues(t, expected[count].value, string(vs.Value))
 			count++
 		}
@@ -552,14 +552,14 @@ func TestTablesMergeIteratorNested(t *testing.T) {
 		}
 
 		for _, cas := range cases {
-			it.Seek(keyWithVersion([]byte(cas.in), 0))
+			it.Seek(KeyWithVersion([]byte(cas.in), 0))
 			if !cas.valid {
 				require.False(t, it.Valid())
 				continue
 			}
 
 			require.True(t, it.Valid())
-			k := parseKey(it.Key())
+			k := ParseKey(it.Key())
 			require.EqualValues(t, cas.out, string(k))
 			require.EqualValues(t, cas.oval, it.Value().Value)
 		}

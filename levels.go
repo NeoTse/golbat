@@ -743,7 +743,7 @@ func (ls *levels) splitSubCompact(ci *compactInfo) {
 		}
 
 		if (i+1)%width == 0 {
-			right := keyWithVersion(parseKey(table.Biggest()), 0)
+			right := KeyWithVersion(ParseKey(table.Biggest()), 0)
 			appendRange(right)
 		}
 	}
@@ -814,7 +814,7 @@ func (ls *levels) subcompact(it Iterator, kr keyRange, ci compactInfo,
 			}
 
 			if len(skipKey) > 0 {
-				if sameKey(curr, skipKey) {
+				if SameKey(curr, skipKey) {
 					numSkips++
 					updateStats(it.Value())
 					continue
@@ -823,7 +823,7 @@ func (ls *levels) subcompact(it Iterator, kr keyRange, ci compactInfo,
 				skipKey = skipKey[:0]
 			}
 
-			if !sameKey(curr, lastKey) {
+			if !SameKey(curr, lastKey) {
 				if len(kr.right) > 0 && ls.opts.comparator(curr, kr.right) >= 0 {
 					// no more record in the keyRange that need to compact
 					break
@@ -860,7 +860,7 @@ func (ls *levels) subcompact(it Iterator, kr keyRange, ci compactInfo,
 
 			numKeys++
 			v := it.Value()
-			version := parseVersion(curr)
+			version := ParseVersion(curr)
 			isDeleted := v.Meta&Delete > 0
 			// the version of key below the discardVersion, the key should be discarded.
 			if version < discardVersion {
@@ -1162,13 +1162,13 @@ func loadTables(opts *Options, mf *Manifest) ([][]*Table, uint64, error) {
 
 	var tm sync.Mutex
 	tables := make([][]*Table, opts.MaxLevels)
-	for id, tmf := range mf.tables {
+	for id, tmf := range mf.Tables {
 		tableFileName := NewTableFileName(id, opts.Dir)
 
 		select {
 		case <-ticker.C:
 			opts.Logger.Infof("%d tables out of %d opened in %s\n", atomic.LoadInt32(&numTables),
-				len(mf.tables), time.Since(start).Round(time.Millisecond))
+				len(mf.Tables), time.Since(start).Round(time.Millisecond))
 		default:
 		}
 
@@ -1231,7 +1231,7 @@ func checkTablesByManifest(opts *Options, mf *Manifest) error {
 	tableMap := getTableIdMap(opts.Dir)
 
 	// 1. Check all files in manifest exist.
-	for id := range mf.tables {
+	for id := range mf.Tables {
 		if _, ok := tableMap[id]; !ok {
 			return fmt.Errorf("file does not exist for table %d", id)
 		}
@@ -1239,7 +1239,7 @@ func checkTablesByManifest(opts *Options, mf *Manifest) error {
 
 	// 2. Delete files that shouldn't exist.
 	for id := range tableMap {
-		if _, ok := mf.tables[id]; !ok {
+		if _, ok := mf.Tables[id]; !ok {
 			opts.Logger.Debugf("Table file %d not referenced in MANIFEST\n", id)
 			filename := NewTableFileName(id, opts.Dir)
 			if err := os.Remove(filename); err != nil {
@@ -1313,7 +1313,7 @@ func containsPrefix(table *Table, prefix []byte) bool {
 		iter := table.NewIterator(false)
 		defer iter.Close()
 
-		iter.Seek(keyWithVersion(prefix, math.MaxUint64))
+		iter.Seek(KeyWithVersion(prefix, math.MaxUint64))
 		if iter.Valid() && bytes.HasPrefix(iter.Key(), prefix) {
 			return true
 		}

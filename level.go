@@ -210,7 +210,7 @@ func (l *level) GetValue(key []byte) (EValue, error) {
 		return value, decr()
 	}
 
-	hash := internel.Hash(parseKey(key))
+	hash := internel.Hash(ParseKey(key))
 	for _, table := range tables {
 		if table.DoesNotHave(hash) {
 			continue
@@ -225,9 +225,9 @@ func (l *level) GetValue(key []byte) (EValue, error) {
 		}
 
 		matched := iter.Key()
-		if sameKey(key, matched) {
+		if SameKey(key, matched) {
 			value = iter.ValueCopy()
-			value.version = parseVersion(matched)
+			value.version = ParseVersion(matched)
 			break
 		}
 	}

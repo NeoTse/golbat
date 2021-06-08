@@ -84,7 +84,7 @@ func (m *memTable) Put(key []byte, value EValue) error {
 	}
 
 	m.skl.Put(key, value.Encode())
-	if version := parseVersion(key); version > m.maxVersion {
+	if version := ParseVersion(key); version > m.maxVersion {
 		m.maxVersion = version
 	}
 
@@ -132,7 +132,7 @@ func (m *memTable) restore() walker {
 			Value: e.value,
 		}
 
-		if version := parseVersion(e.key); version > m.maxVersion {
+		if version := ParseVersion(e.key); version > m.maxVersion {
 			m.maxVersion = version
 		}
 		m.skl.Put(e.key, ev.Encode())

@@ -16,8 +16,8 @@ import (
 )
 
 type Manifest struct {
-	levels []levelsManifest
-	tables map[uint64]tableManifest
+	Levels []levelsManifest
+	Tables map[uint64]tableManifest
 
 	creations int
 	deletions int
@@ -29,19 +29,19 @@ type tableManifest struct {
 }
 
 type levelsManifest struct {
-	tables map[uint64]struct{} // tableid set
+	Tables map[uint64]struct{} // tableid set
 }
 
 func NewManifest() Manifest {
 	return Manifest{
-		levels: make([]levelsManifest, 0),
-		tables: make(map[uint64]tableManifest),
+		Levels: make([]levelsManifest, 0),
+		Tables: make(map[uint64]tableManifest),
 	}
 }
 
 func (m *Manifest) toChanges() manifestChanges {
 	changes := []*manifestChange{}
-	for tid, tm := range m.tables {
+	for tid, tm := range m.Tables {
 		changes = append(changes,
 			newManifestChange(mcreate, tid, uint64(tm.level), tm.compression))
 	}
@@ -301,7 +301,7 @@ func rewrite(dir string, m *Manifest) (*os.File, int, error) {
 		return nil, 0, err
 	}
 
-	return nf, len(m.tables), nil
+	return nf, len(m.Tables), nil
 }
 
 // always write begin of manifest file
@@ -355,29 +355,29 @@ func readLengthAndChecksum(reader *bufio.Reader) (uint32, []byte, error) {
 func applyManifestChange(m *Manifest, change *manifestChange) error {
 	switch change.op {
 	case mcreate:
-		if _, ok := m.tables[change.tableId]; ok {
+		if _, ok := m.Tables[change.tableId]; ok {
 			return errors.Errorf("MANIFEST Invalid, table %d exists.", change.tableId)
 		}
-		m.tables[change.tableId] = tableManifest{
+		m.Tables[change.tableId] = tableManifest{
 			level:       uint8(change.levelId),
 			compression: change.compression,
 		}
 
-		for len(m.levels) <= int(change.levelId) {
-			m.levels = append(m.levels, levelsManifest{tables: map[uint64]struct{}{}})
+		for len(m.Levels) <= int(change.levelId) {
+			m.Levels = append(m.Levels, levelsManifest{Tables: map[uint64]struct{}{}})
 		}
 
-		m.levels[change.levelId].tables[change.tableId] = struct{}{}
+		m.Levels[change.levelId].Tables[change.tableId] = struct{}{}
 		m.creations++
 		return nil
 	case mdelete:
-		tm, ok := m.tables[change.tableId]
+		tm, ok := m.Tables[change.tableId]
 		if !ok {
 			return errors.Errorf("MANIFEST removes non-existing table %d.", change.tableId)
 		}
 
-		delete(m.tables, change.tableId)
-		delete(m.levels[tm.level].tables, change.tableId)
+		delete(m.Tables, change.tableId)
+		delete(m.Levels[tm.level].Tables, change.tableId)
 		m.deletions++
 		return nil
 	default:

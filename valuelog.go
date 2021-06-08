@@ -537,7 +537,7 @@ func (v *valueLog) gcLogFile(lf *logFile, db DB) error {
 		}
 
 		// Version not found. Discard.
-		if ev.version != parseVersion(e.key) {
+		if ev.version != ParseVersion(e.key) {
 			return nil
 		}
 

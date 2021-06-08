@@ -137,8 +137,8 @@ func (b *blockBuilder) Add(key []byte, value EValue, valueLen uint32) *fileBlock
 		block = b.Finish()
 	}
 
-	b.keyHashes = append(b.keyHashes, internel.Hash(parseKey(key)))
-	if version := parseVersion(key); version > b.maxVersion {
+	b.keyHashes = append(b.keyHashes, internel.Hash(ParseKey(key)))
+	if version := ParseVersion(key); version > b.maxVersion {
 		b.maxVersion = version
 	}
 

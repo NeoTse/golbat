@@ -11,7 +11,7 @@ func TestBlockBuilderBasic(t *testing.T) {
 	opts := Options{BlockSize: 1024}
 	builder := blockBuilder{opts: &opts, curBlock: &fileBlock{}}
 
-	key := keyWithVersion([]byte("key"), uint64(1))
+	key := KeyWithVersion([]byte("key"), uint64(1))
 	value := EValue{Meta: Value, Value: []byte("value12345")}
 
 	blk := builder.Add(key, value, uint32(len(value.Value)))
@@ -19,7 +19,7 @@ func TestBlockBuilderBasic(t *testing.T) {
 
 	require.False(t, builder.Empty())
 	require.Equal(t, 1, len(builder.keyHashes))
-	require.Equal(t, internel.Hash(parseKey(key)), builder.keyHashes[0])
+	require.Equal(t, internel.Hash(ParseKey(key)), builder.keyHashes[0])
 	require.EqualValues(t, key, builder.curBlock.baseKey)
 	require.Equal(t, 1, len(builder.curBlock.entryOffsets))
 	require.EqualValues(t, uint32(0), builder.curBlock.entryOffsets[0])
@@ -56,7 +56,7 @@ func TestBlockBuilderFull(t *testing.T) {
 			version++
 		}
 
-		key = keyWithVersion(getKey(i), version)
+		key = KeyWithVersion(getKey(i), version)
 		value = EValue{Meta: Value, Value: getValue(i * 10)}
 		if builder.isFullWith(key, value) {
 			break
@@ -79,10 +79,10 @@ func TestBlockBuilderFull(t *testing.T) {
 }
 
 func TestDiffKey(t *testing.T) {
-	key1 := keyWithVersion([]byte("key"), uint64(1))
+	key1 := KeyWithVersion([]byte("key"), uint64(1))
 	value1 := EValue{Meta: Value, Value: []byte("value12345")}
 
-	key2 := keyWithVersion([]byte("key"), uint64(10))
+	key2 := KeyWithVersion([]byte("key"), uint64(10))
 	value2 := EValue{Meta: Value, Value: []byte("value67891")}
 
 	opts := Options{BlockSize: 1024}

@@ -37,7 +37,7 @@ func (iter *TableIterator) DisableChecksum() {
 // Seek return the first entry that is >= input key from start (or <= input key if reverse enable)
 func (iter *TableIterator) Seek(key []byte) {
 	iter.seekFrom(key, restart)
-	if iter.reverse && !sameKey(iter.Key(), key) {
+	if iter.reverse && !SameKey(iter.Key(), key) {
 		iter._prev()
 	}
 }

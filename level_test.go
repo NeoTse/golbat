@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var levelOpts = Options{comparator: compareKeys,
+var levelOpts = Options{comparator: CompareKeys,
 	NumLevelZeroTablesStall: 10,
 	CompressionType:         NoCompression,
 }

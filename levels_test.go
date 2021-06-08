@@ -30,7 +30,7 @@ var testOption = Options{
 	ValueLogFileSize:        2 << 20,
 	ValueLogMaxEntries:      1000,
 	ValueThreshold:          32 << 10,
-	comparator:              compareKeys,
+	comparator:              CompareKeys,
 }
 
 func getLevels(numCompactors int) *levels {
@@ -76,7 +76,7 @@ func createAndOpenTable(ls *levels, data []keyValVersion, level int) {
 	builder := NewTableBuilder(opts)
 
 	for _, item := range data {
-		key := keyWithVersion([]byte(item.key), item.version)
+		key := KeyWithVersion([]byte(item.key), item.version)
 		value := EValue{Meta: item.meta, Value: []byte(item.val)}
 
 		builder.Add(key, value, 0)
@@ -100,7 +100,7 @@ func createAndOpenTable(ls *levels, data []keyValVersion, level int) {
 
 func getAllAndCheck(t *testing.T, ls *levels, expected []keyValVersion) {
 	for _, kv := range expected {
-		key := keyWithVersion([]byte(kv.key), kv.version)
+		key := KeyWithVersion([]byte(kv.key), kv.version)
 		value := EValue{Value: []byte(kv.val), Meta: kv.meta, version: kv.version}
 		v, err := ls.GetValue(key, 0)
 		require.NoError(t, err)
@@ -111,7 +111,7 @@ func getAllAndCheck(t *testing.T, ls *levels, expected []keyValVersion) {
 func getAllAndCheckNotIn(t *testing.T, ls *levels, notIncludes []keyValVersion) {
 	var emptyVal EValue
 	for _, kv := range notIncludes {
-		key := keyWithVersion([]byte(kv.key), kv.version)
+		key := KeyWithVersion([]byte(kv.key), kv.version)
 		v, err := ls.GetValue(key, 0)
 		require.NoError(t, err)
 		require.Equal(t, v, emptyVal)
@@ -137,7 +137,7 @@ func TestLevelsGet(t *testing.T) {
 		}
 
 		for _, item := range tc.expect {
-			key := keyWithVersion([]byte(item.key), item.version)
+			key := KeyWithVersion([]byte(item.key), item.version)
 			v, err := ls.GetValue(key, 0)
 			require.NoError(t, err)
 			require.Equal(t, item.val, string(v.Value))

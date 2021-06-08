@@ -2,6 +2,7 @@ package golbat
 
 import (
 	"bytes"
+	"hash/crc32"
 
 	"github.com/golbat/internel"
 )
@@ -316,12 +317,26 @@ func (item *Item) KeyCopy(dst []byte) []byte {
 	return safeCopy(dst, item.key)
 }
 
+func (item *Item) KeySize() int64 {
+	return int64(len(item.key))
+}
+
 func (item *Item) Value() []byte {
 	return item.value
 }
 
 func (item *Item) ValueCopy(dst []byte) []byte {
 	return safeCopy(dst, item.value)
+}
+
+func (item *Item) ValueSize() int64 {
+	if item.InValueLog() {
+		klen := int64(len(item.key) + 8)
+		// 7 bytes are for the approximate length of the header.
+		return int64(item.vp.len) - klen - 7 - crc32.Size
+	}
+
+	return int64(len(item.value))
 }
 
 func (item *Item) Version() uint64 {

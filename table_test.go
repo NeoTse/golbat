@@ -24,7 +24,7 @@ func getTestTableOptions() Options {
 		ZSTDCompressionLevel: 15,
 		BlockSize:            4 * 1024,
 		BloomFalsePositive:   0.01,
-		comparator:           compareKeys,
+		comparator:           CompareKeys,
 	}
 }
 
@@ -55,7 +55,7 @@ func buildTable(t *testing.T, keyValues [][]string, opts Options) *Table {
 	})
 	for _, kv := range keyValues {
 		AssertTrue(len(kv) == 2)
-		b.Add(keyWithVersion([]byte(kv[0]), 0),
+		b.Add(KeyWithVersion([]byte(kv[0]), 0),
 			EValue{Value: []byte(kv[1]), Meta: Value}, 0)
 	}
 	tbl, err := CreateTable(filename, b)
@@ -74,7 +74,7 @@ func TestTableBasic(t *testing.T) {
 
 	count := 0
 	for iter.SeekToFirst(); iter.Valid(); iter.Next() {
-		k := keyWithVersion([]byte(key("key", count)), 0)
+		k := KeyWithVersion([]byte(key("key", count)), 0)
 		v := fmt.Sprintf("%d", count)
 
 		require.EqualValues(t, k, iter.Key())
@@ -134,7 +134,7 @@ func TestTableBigValues(t *testing.T) {
 	builder := NewTableBuilder(opts)
 
 	for i := 0; i < n; i++ {
-		key := keyWithVersion([]byte(key("", i)), uint64(i+1))
+		key := KeyWithVersion([]byte(key("", i)), uint64(i+1))
 		vs := EValue{Value: value(i), Meta: Value}
 		builder.Add(key, vs, 0)
 	}
@@ -155,7 +155,7 @@ func TestTableBigValues(t *testing.T) {
 
 	count := 0
 	for iter.SeekToFirst(); iter.Valid(); iter.Next() {
-		require.Equal(t, []byte(key("", count)), parseKey(iter.Key()), "keys are not equal")
+		require.Equal(t, []byte(key("", count)), ParseKey(iter.Key()), "keys are not equal")
 		require.Equal(t, value(count), iter.Value().Value, "values are not equal")
 		count++
 	}
@@ -189,7 +189,7 @@ func TestMaxVersion(t *testing.T) {
 
 	n := 1000
 	for i := 0; i < n; i++ {
-		b.Add(keyWithVersion([]byte(key("key", i)), uint64(i+1)),
+		b.Add(KeyWithVersion([]byte(key("key", i)), uint64(i+1)),
 			EValue{Value: []byte(key("value", i)), Meta: Value}, 0)
 	}
 
@@ -206,8 +206,8 @@ func TestSmallestAndBiggest(t *testing.T) {
 	tbl := buildTestTable(t, "key", 1000, opts)
 	defer tbl.DecrRef()
 
-	smallest := keyWithVersion([]byte(key("key", 0)), 0)
-	biggest := keyWithVersion([]byte(key("key", 999)), 0)
+	smallest := KeyWithVersion([]byte(key("key", 0)), 0)
+	biggest := KeyWithVersion([]byte(key("key", 999)), 0)
 
 	require.EqualValues(t, smallest, tbl.Smallest())
 	require.EqualValues(t, biggest, tbl.Biggest())
