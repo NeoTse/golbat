@@ -98,7 +98,7 @@ func TestDiffKey(t *testing.T) {
 
 	require.Equal(t, uint16(10), header.overlap)
 	require.Equal(t, uint16(1), header.diff)
-	require.EqualValues(t, []byte{10}, builder.curBlock.data[start+4:start+uint32(header.diff)])
+	require.EqualValues(t, []byte{10}, builder.curBlock.data[start+4:start+4+uint32(header.diff)])
 }
 
 func TestEmptyBuilder(t *testing.T) {

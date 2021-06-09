@@ -56,7 +56,8 @@ func TestEmpty(t *testing.T) {
 	skl := NewSkiplist(size, comparator)
 
 	require.True(t, skl.getHeight() == 1)
-	require.True(t, skl.Get(key) == nil)
+	_, v := skl.Get(key)
+	require.True(t, v == nil)
 	require.True(t, skl.findLessThan(key) == nil)
 	require.True(t, skl.findGreaterOrEqual(key) == nil)
 	require.True(t, skl.findLast() == nil)
@@ -223,29 +224,29 @@ func TestSequential(t *testing.T) {
 	skl.Put(k2, v2)
 	skl.Put(k3, v3)
 
-	v := skl.Get(k4)
+	_, v := skl.Get(k4)
 	require.Nil(t, v)
 
-	v = skl.Get(k1)
+	_, v = skl.Get(k1)
 	require.NotNil(t, v)
 	require.EqualValues(t, "0000000100", v)
 
-	v = skl.Get(k2)
+	_, v = skl.Get(k2)
 	require.NotNil(t, v)
 	require.EqualValues(t, "0000000101", v2)
 
-	v = skl.Get(k3)
+	_, v = skl.Get(k3)
 	require.NotNil(t, v)
 	require.EqualValues(t, "0000000102", v3)
 
 	skl.Put(k3, v4)
-	v = skl.Get(k3)
+	_, v = skl.Get(k3)
 	require.NotNil(t, v)
 	require.EqualValues(t, "0000000103", v4)
 
 	v5 := getBytes(104, 1024*512) // 0.5 MB
 	skl.Put(k4, v5)
-	v = skl.Get(k4)
+	_, v = skl.Get(k4)
 	require.NotNil(t, v)
 	require.EqualValues(t, v5, v)
 }
@@ -273,7 +274,7 @@ func TestConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			v := skl.Get(getBytes(i, 5))
+			_, v := skl.Get(getBytes(i, 5))
 			require.NotNil(t, v)
 			require.EqualValues(t, getBytes(i, 5), v)
 		}(i)

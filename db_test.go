@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var testWriteOptions = WriteOptions{Sync: true}
+
 func getTestDB(t *testing.T) (DB, func()) {
 	dir, err := ioutil.TempDir("", "golbat-test")
 	require.NoError(t, err)
@@ -79,30 +81,30 @@ func TestDBGet(t *testing.T) {
 	db, def := getTestDB(t)
 	defer def()
 
-	db.Put(&DefaultWriteOptions, []byte("key1"), []byte("val1"))
+	db.Put(&testWriteOptions, []byte("key1"), []byte("val1"))
 	res, err := db.GetExtend(&DefaultReadOptions, []byte("key1"))
 	require.NoError(t, err)
 	require.Equal(t, "val1", string(res.Value))
 	require.Equal(t, Value, res.Meta)
 
-	db.Put(&DefaultWriteOptions, []byte("key1"), []byte("val2"))
+	db.Put(&testWriteOptions, []byte("key1"), []byte("val2"))
 	res, err = db.GetExtend(&DefaultReadOptions, []byte("key1"))
 	require.NoError(t, err)
 	require.Equal(t, "val2", string(res.Value))
 	require.Equal(t, Value, res.Meta)
 
-	db.Delete(&DefaultWriteOptions, []byte("key1"))
+	db.Delete(&testWriteOptions, []byte("key1"))
 	_, err = db.GetExtend(&DefaultReadOptions, []byte("key1"))
 	require.Equal(t, ErrKeyNotFound, err)
 
-	db.Put(&DefaultWriteOptions, []byte("key1"), []byte("val3"))
+	db.Put(&testWriteOptions, []byte("key1"), []byte("val3"))
 	res, err = db.GetExtend(&DefaultReadOptions, []byte("key1"))
 	require.NoError(t, err)
 	require.Equal(t, "val3", string(res.Value))
 	require.Equal(t, Value, res.Meta)
 
 	longVal := make([]byte, 1000)
-	db.Put(&DefaultWriteOptions, []byte("key1"), longVal)
+	db.Put(&testWriteOptions, []byte("key1"), longVal)
 	res, err = db.GetExtend(&DefaultReadOptions, []byte("key1"))
 	require.NoError(t, err)
 	require.EqualValues(t, longVal, res.Value)
@@ -114,7 +116,7 @@ func TestDBReadAndWrite(t *testing.T) {
 	defer def()
 
 	for i := 0; i < 100; i++ {
-		require.NoError(t, db.Put(&DefaultWriteOptions, []byte(fmt.Sprintf("key%d", i)),
+		require.NoError(t, db.Put(&testWriteOptions, []byte(fmt.Sprintf("key%d", i)),
 			[]byte(fmt.Sprintf("val%d", i))))
 	}
 
@@ -133,7 +135,7 @@ func TestDBReadAndWriteWithSnapshot(t *testing.T) {
 
 	var snapshot *Snapshot
 	for i := 0; i < 100; i++ {
-		require.NoError(t, db.Put(&DefaultWriteOptions, []byte(fmt.Sprintf("key%d", i)),
+		require.NoError(t, db.Put(&testWriteOptions, []byte(fmt.Sprintf("key%d", i)),
 			[]byte(fmt.Sprintf("val%d", i))))
 
 		if i == 50 {
@@ -205,7 +207,7 @@ func TestConcurrentWrite(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			for j := 0; j < m; j++ {
-				db.Put(&DefaultWriteOptions, []byte(fmt.Sprintf("k%05d_%08d", i, j)),
+				db.Put(&testWriteOptions, []byte(fmt.Sprintf("k%05d_%08d", i, j)),
 					[]byte(fmt.Sprintf("v%05d_%08d", i, j)))
 			}
 		}(i)
@@ -258,7 +260,7 @@ func TestWriteToValueLog(t *testing.T) {
 		k := []byte(fmt.Sprintf("key%d", i))
 		v := []byte(fmt.Sprintf("val%064d", i))
 		if wb.FullWith(k, v) {
-			require.NoError(t, db.Write(&DefaultWriteOptions, wb))
+			require.NoError(t, db.Write(&testWriteOptions, wb))
 			wb.Clear()
 		}
 
@@ -364,7 +366,7 @@ func TestDBIterate(t *testing.T) {
 		if (i % 1000) == 0 {
 			t.Logf("Put i=%d\n", i)
 		}
-		db.Put(&DefaultWriteOptions, bkey(i), bval(i))
+		db.Put(&testWriteOptions, bkey(i), bval(i))
 	}
 
 	iter, err := db.NewIterator(&DefaultReadOptions)
@@ -416,7 +418,7 @@ func TestConcurrentWriteAndIterate(t *testing.T) {
 		if (i % 1000) == 0 {
 			t.Logf("Put i=%d\n", i)
 		}
-		db.Put(&DefaultWriteOptions, bkey(i), bval(i))
+		db.Put(&testWriteOptions, bkey(i), bval(i))
 	}
 
 	// the iterator can't able to see those writes that performed after this iterator is created

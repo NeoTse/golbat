@@ -454,8 +454,12 @@ func (db *DBImpl) get(options *ReadOptions, key []byte) (value EValue, err error
 	key = KeyWithVersion(key, version)
 
 	for _, table := range tables {
-		v := table.skl.Get(key)
+		k, v := table.skl.Get(key)
 		if v == nil {
+			continue
+		}
+
+		if !SameKey(key, k) {
 			continue
 		}
 

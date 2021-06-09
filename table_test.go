@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -170,14 +171,20 @@ func TestTableChecksum(t *testing.T) {
 	rb := make([]byte, 100)
 	rand.Read(rb)
 	opts := getTestTableOptions()
+	opts.VerifyTableChecksum = true
 	tbl := buildTestTable(t, "k", 10000, opts)
 	// Write random bytes at random location.
 	start := rand.Intn(len(tbl.Data) - len(rb))
 	n := copy(tbl.Data[start:], rb)
 	require.Equal(t, n, len(rb))
 
-	err := tbl.VerifyCheckSum()
-	require.Error(t, err)
+	require.Panics(t, func() {
+		// Either OpenTable will panic on corrupted data or the checksum verification will fail.
+		_, err := OpenTable(tbl.MmapFile, opts)
+		if strings.Contains(err.Error(), "checksum") {
+			panic("checksum mismatch")
+		}
+	})
 }
 
 func TestMaxVersion(t *testing.T) {

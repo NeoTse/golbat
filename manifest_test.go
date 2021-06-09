@@ -140,10 +140,12 @@ func TestManifestApplyRandom(t *testing.T) {
 func TestManifestClone(t *testing.T) {
 	manifest := NewManifest()
 	changes := getTestChanges(10, 2)
+	expected := NewManifest()
 	require.NoError(t, applyManifestChanges(&manifest, changes))
+	require.NoError(t, applyManifestChanges(&expected, manifest.toChanges()))
 
 	clone := manifest.clone()
-	require.EqualValues(t, manifest, clone)
+	require.EqualValues(t, expected, clone)
 }
 
 func TestManifestOpenNew(t *testing.T) {

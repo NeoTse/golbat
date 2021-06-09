@@ -1,7 +1,6 @@
 package internel
 
 import (
-	"bytes"
 	"sync/atomic"
 )
 
@@ -99,19 +98,16 @@ func (s *Skiplist) Put(key, value []byte) {
 	}
 }
 
-func (s *Skiplist) Get(key []byte) []byte {
+func (s *Skiplist) Get(key []byte) ([]byte, []byte) {
 	node := s.findGreaterOrEqual(key)
 
 	if node == nil {
-		return nil
+		return key, nil
 	}
 
 	k := node.key(s.arena)
-	if !sameKey(key, k) {
-		return nil
-	}
 
-	return node.val(s.arena)
+	return k, node.val(s.arena)
 }
 
 func (s *Skiplist) Empty() bool {
@@ -288,19 +284,4 @@ func (i *Iterator) SeekToLast() {
 func (i *Iterator) Close() error {
 	i.skl.Deref()
 	return nil
-}
-
-func sameKey(key1, key2 []byte) bool {
-	if len(key1) != len(key2) {
-		return false
-	}
-
-	return bytes.Equal(parseKey(key1), parseKey(key2))
-}
-
-func parseKey(key []byte) []byte {
-	if key == nil {
-		return nil
-	}
-	return key[:len(key)-8]
 }
