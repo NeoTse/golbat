@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	DefaultReadOptions  = ReadOptions{VerifyCheckSum: true, FillCache: false, Snapshot: nil}
+	DefaultReadOptions  = ReadOptions{VerifyCheckSum: true, FillCache: false, Snapshot: nil, AllVersion: false}
 	DefaultWriteOptions = WriteOptions{Sync: false}
 )
 
@@ -64,6 +64,8 @@ type Options struct {
 	LevelSizeMultiplier int
 	TableSizeMultiplier int
 	NumCompactors       int
+
+	VerifyTableChecksum bool
 }
 
 type ReadOptions struct {
@@ -104,7 +106,8 @@ func DefaultOptions(dir string) Options {
 		CompressionType:      SnappyCompression,
 		ZSTDCompressionLevel: 1,
 
-		comparator: CompareKeys,
-		Logger:     internel.DefaultLogger(internel.INFO),
+		comparator:          CompareKeys,
+		Logger:              internel.DefaultLogger(internel.INFO),
+		VerifyTableChecksum: false,
 	}
 }

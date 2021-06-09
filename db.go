@@ -243,10 +243,12 @@ func (db *DBImpl) getMaxVersion() uint64 {
 }
 
 // Close closes a DB. Calling Close(db) multiple times would still only close the DB once.
-func Close(db DB) {
+func Close(db DB) error {
 	if err := db.Close(); err != nil {
-		Wrap(err, "close db failed.")
+		return Wrap(err, "close db failed.")
 	}
+
+	return nil
 }
 
 // RunValueLogGC triggers a value log garbage collection.
@@ -324,7 +326,11 @@ func (db *DBImpl) Write(options *WriteOptions, batch *WriteBatch) error {
 		return err
 	}
 
-	return wb.Wait()
+	if options.Sync {
+		return wb.Wait()
+	}
+
+	return nil
 }
 
 func (db *DBImpl) doWrite(batch *WriteBatch) (*writeBatchInternel, error) {

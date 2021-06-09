@@ -197,6 +197,13 @@ func OpenTable(mf *internel.MmapFile, opts Options) (*Table, error) {
 		return nil, Wrapf(err, "failed to initialize table")
 	}
 
+	if opts.VerifyTableChecksum {
+		if err := t.VerifyCheckSum(); err != nil {
+			mf.Close()
+			return nil, Wrapf(err, "failed to verify checksum")
+		}
+	}
+
 	return t, nil
 }
 
