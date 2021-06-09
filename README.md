@@ -206,19 +206,19 @@ if err != nil {
 
 Performance can be tuned by changing the default values of the types defined in `golat.Options`
 
-### ValueThreshold
+#### ValueThreshold
 
 The ValueThreshold is the most important setting. If sets a higher ValueThreshold so values would be collocated with the LSM tree, with value log largely acting as a write-ahead log only. These options would reduce the disk usage of value log, and make golbat act more like a typical LSM tree. When there are many small values (<=1KB) and read frequently, sets a higher ValueThreshold (bigger than the most values) can make a good performance. Otherwise, write frequently or more big values (>= 64KB), sets a lower ValueThreshold more better. The default ValueThreshold in `golat.DefaultOptions` is 1MB.
 
-### Block size
+#### Block size
 
 Golbat groups adjacent keys together into the same block and such a block is the unit of transfer to and from persistent storage. The default block size is approximately 4096 uncompressed bytes. Applications that mostly do bulk scans over the contents of the database may wish to increase this size. Applications that do a lot of point reads of small values may wish to switch to a smaller block size if performance measurements indicate an improvement. There isn't much benefit in using blocks smaller than one kilobyte, or larger than a few megabytes. Also note that compression will be more effective with larger block sizes.
 
-### Compression
+#### Compression
 
 Each block is individually compressed before being written to persistent storage. Compression is on by default (snappy). the `ZSTD` compression recommended but it need `CGO`.
 
-### Checksums
+#### Checksums
 
 Golbat associates checksums with all data it stores in the file system. There are two separate controls provided over how aggressively these checksums are verified:
 
