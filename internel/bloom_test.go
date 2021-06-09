@@ -12,7 +12,7 @@ func bloomFilterString(bf BloomFilter) string {
 	for i, v := range bf {
 		for j := 0; j < 8; j++ {
 			idx := 8*i + j
-			if v&(1<<j) != 0 {
+			if v&(1<<uint(j)) != 0 {
 				s[idx] = '1'
 			} else {
 				s[idx] = '.'
