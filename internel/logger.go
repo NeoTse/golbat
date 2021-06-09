@@ -19,6 +19,7 @@ const (
 	INFO
 	WARNING
 	ERROR
+	SLICENCE
 )
 
 type defaultLog struct {

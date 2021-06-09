@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/zstd"
 	"github.com/golang/snappy"
 	"github.com/neotse/golbat/internel"
 	"github.com/pkg/errors"
@@ -487,7 +486,7 @@ func (t *Table) decompress(b *memBlock) error {
 	case ZSTDCompression:
 		sz := int(float64(t.opt.BlockSize) * 1.2)
 		dst = make([]byte, sz)
-		b.data, err = zstd.Decompress(dst, b.data)
+		b.data, err = internel.ZSTDDecompress(dst, b.data)
 		if err != nil {
 			return Wrapf(err, "failed to decompress")
 		}
@@ -597,9 +596,9 @@ func (b *TableBuilder) compressData(data []byte) ([]byte, error) {
 		dst := make([]byte, sz)
 		return snappy.Encode(dst, data), nil
 	case ZSTDCompression:
-		sz := zstd.CompressBound(len(data))
+		sz := internel.ZSTDCompressBound(len(data))
 		dst := make([]byte, sz)
-		return zstd.CompressLevel(dst, data, b.opts.ZSTDCompressionLevel)
+		return internel.ZSTDCompress(dst, data, b.opts.ZSTDCompressionLevel)
 	}
 
 	return nil, ErrCompressionType
