@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 )
 
 type levels struct {
@@ -1136,6 +1136,43 @@ func (ls *levels) appendIterators(iters []Iterator, option *ReadOptions) []Itera
 	}
 
 	return iters
+}
+
+func (ls *levels) dropTree() (int, error) {
+	var all []*Table
+	for _, l := range ls.ls {
+		l.RLock()
+		all = append(all, l.tables...)
+		l.RUnlock()
+	}
+
+	if len(all) == 0 {
+		return 0, nil
+	}
+
+	changes := manifestChanges{}
+	for _, table := range all {
+		changes = append(changes, newManifestChange(mdelete, table.id, 0, table.CompressionType()))
+	}
+
+	if err := ls.manifest.AddManifestChange(changes); err != nil {
+		return 0, err
+	}
+
+	for _, l := range ls.ls {
+		l.Lock()
+		l.totalSize = 0
+		l.tables = l.tables[:0]
+		l.Unlock()
+	}
+
+	for _, table := range all {
+		if err := table.DecrRef(); err != nil {
+			return 0, err
+		}
+	}
+
+	return len(all), nil
 }
 
 func sortByMaxVersion(tables []*Table) {

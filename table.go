@@ -14,7 +14,7 @@ import (
 
 	"github.com/DataDog/zstd"
 	"github.com/golang/snappy"
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 	"github.com/pkg/errors"
 )
 

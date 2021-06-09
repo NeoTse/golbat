@@ -11,7 +11,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 	"github.com/pkg/errors"
 )
 

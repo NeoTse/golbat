@@ -2,6 +2,7 @@ package golbat
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -14,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 	"github.com/pkg/errors"
 )
 
@@ -328,7 +329,7 @@ func (db *DBImpl) Write(options *WriteOptions, batch *WriteBatch) error {
 
 func (db *DBImpl) doWrite(batch *WriteBatch) (*writeBatchInternel, error) {
 	if atomic.LoadInt32(&db.blockWrites) == 1 {
-		return nil, ErrDBClosed
+		return nil, ErrBlockedWrites
 	}
 
 	wb := batchPool.Get().(*writeBatchInternel)
@@ -580,7 +581,7 @@ func (db *DBImpl) doClose() error {
 	db.closers.compact.SignalAndWait()
 
 	db.option.Logger.Infof("Closing tables")
-	db.option.Logger.Infof(levelsToString(db.ls.GetLevelMeta()))
+	db.option.Logger.Infof(db.LevelsToString())
 	if lErr := db.ls.Close(); err == nil {
 		err = Wrap(lErr, "DB.Close")
 	}
@@ -648,10 +649,27 @@ func (db *DBImpl) stopMemTableFlush() {
 	}
 }
 
+func (db *DBImpl) startMemoryFlush() {
+	if db.closers.memtable != nil {
+		db.flushCh = make(chan *memTable, db.option.NumMemtables)
+		db.closers.memtable = internel.NewCloser(1)
+		go func() {
+			_ = db.flushMemTable(db.closers.memtable)
+		}()
+	}
+}
+
 func (db *DBImpl) stopCompact() {
 	if db.closers.compact != nil {
 		// wait for running compact finish, keep data consistency
 		db.closers.compact.SignalAndWait()
+	}
+}
+
+func (db *DBImpl) startCompact() {
+	if db.closers.compact != nil {
+		db.closers.compact = internel.NewCloser(1)
+		db.ls.StartCompact(db.closers.compact)
 	}
 }
 
@@ -1028,7 +1046,7 @@ func exists(path string) (bool, error) {
 	return true, err
 }
 
-func levelsToString(ls []LevelMeta) string {
+func (db *DBImpl) LevelsToString() string {
 	const MB = float64(1 << 20)
 	var b strings.Builder
 	b.WriteRune('\n')
@@ -1044,7 +1062,7 @@ func levelsToString(ls []LevelMeta) string {
 		return float64(n) / MB
 	}
 
-	for _, l := range ls {
+	for _, l := range db.ls.GetLevelMeta() {
 		b.WriteString(fmt.Sprintf(
 			"Level %d [%s]: NumTables: %02d. Size: %.2f MiB of %.2f MiB. Score: %.2f->%.2f"+
 				" Target FileSize: %.2f MiB\n",
@@ -1055,6 +1073,345 @@ func levelsToString(ls []LevelMeta) string {
 
 	b.WriteString("Level Done\n")
 	return b.String()
+}
+
+// DropAll would drop all the data stored in Golat. It does this in the following way.
+// - Stop accepting new writes.
+// - Pause memtable flushes and compactions.
+// - Pick all tables from all levels, create a changeset to delete all these
+// tables and apply it to manifest.
+// - Pick all log files from value log, and delete all of them. Restart value log files from zero.
+// - Resume memtable flushes and compactions.
+//
+// NOTE: DropAll is resilient to concurrent writes, but not to reads. It is up to the user to not do
+// any reads while DropAll is going on, otherwise they may result in panics. Ideally, both reads and
+// writes are paused before running DropAll, and resumed after it is finished.
+func (db *DBImpl) DropAll() error {
+	f, err := db.dropAll()
+	if f != nil {
+		defer f()
+	}
+
+	return err
+}
+
+func (db *DBImpl) dropAll() (func(), error) {
+	db.option.Logger.Infof("DropAll called. Blocking writes...")
+	f, err := db.prepareToDrop()
+	if err != nil {
+		return f, err
+	}
+
+	// prepareToDrop will stop all the incomming write and flushes any pending flush tasks.
+	// Before we drop, we'll stop the compaction because anyways all the datas are going to
+	// be deleted.
+	db.stopCompact()
+	resume := func() {
+		db.startCompact()
+		f()
+	}
+
+	// Block all foreign interactions with memory tables.
+	db.Lock()
+	defer db.Unlock()
+
+	// Remove inmemory tables. Calling DecrRef for safety. Not sure if they're absolutely needed.
+	db.mem.DecrRef()
+	for _, mt := range db.imm {
+		mt.DecrRef()
+	}
+	db.imm = db.imm[:0]
+	db.mem, err = db.newMemTable() // Set it up for future writes.
+	if err != nil {
+		return resume, Wrapf(err, "cannot open new memtable")
+	}
+
+	num, err := db.ls.dropTree()
+	if err != nil {
+		return resume, err
+	}
+	db.option.Logger.Infof("Deleted %d SSTables. Now deleting value logs...\n", num)
+
+	num, err = db.vlog.dropAll()
+	if err != nil {
+		return resume, err
+	}
+	db.ls.nextId = 1
+	db.option.Logger.Infof("Deleted %d value log files. DropAll done.\n", num)
+
+	return resume, nil
+}
+
+func (db *DBImpl) blockWrite() error {
+	// Stop accepting new writes.
+	if !atomic.CompareAndSwapInt32(&db.blockWrites, 0, 1) {
+		return ErrBlockedWrites
+	}
+
+	// Make all pending writes finish. The following will also close writeCh.
+	db.closers.writes.SignalAndWait()
+	db.option.Logger.Infof("Writes flushed. Stopping compactions now...")
+	return nil
+}
+
+func (db *DBImpl) unblockWrite() {
+	db.closers.writes = internel.NewCloser(1)
+	go db.doWrites(db.closers.writes)
+
+	// Resume writes.
+	atomic.StoreInt32(&db.blockWrites, 0)
+}
+
+func (db *DBImpl) prepareToDrop() (func(), error) {
+	// In order prepare for drop, we need to block the incoming writes and
+	// write it to db. Then, flush all the pending flushtask. So that, we
+	// don't miss any entries.
+	if err := db.blockWrite(); err != nil {
+		return nil, err
+	}
+	batches := make([]*writeBatchInternel, 0, 10)
+	for {
+		select {
+		case r := <-db.writeCh:
+			batches = append(batches, r)
+		default:
+			if err := db.writeBatches(batches); err != nil {
+				db.option.Logger.Errorf("writeBatches: %v", err)
+			}
+			db.stopMemTableFlush()
+			return func() {
+				db.option.Logger.Infof("Resuming writes")
+				db.startMemoryFlush()
+				db.unblockWrite()
+			}, nil
+		}
+	}
+}
+
+const maxNumSplits = 128
+
+// KeySplits can be used to get rough key ranges to divide up iteration over
+// the DB.
+func (db *DBImpl) KeySplits(prefix []byte) []string {
+	var splits []string
+	tables := db.GetTables()
+
+	for _, table := range tables {
+		if bytes.HasPrefix(table.Biggest, prefix) {
+			splits = append(splits, string(table.Biggest))
+		}
+	}
+
+	// If the number of splits is low, look at the offsets inside the
+	// tables to generate more splits.
+	if len(splits) < 32 {
+		numTables := len(tables)
+		if numTables == 0 {
+			numTables = 1
+		}
+		numPerTable := 32 / numTables
+		if numPerTable == 0 {
+			numPerTable = 1
+		}
+		splits = db.ls.KeySplits(numPerTable, prefix)
+	}
+
+	// If the number of splits is still < 32, then look at the memtables.
+	if len(splits) < 32 {
+		maxPerSplit := 10000
+		mtSplits := func(mt *memTable) {
+			if mt == nil {
+				return
+			}
+			count := 0
+			iter := mt.skl.Iterator()
+			for iter.SeekToFirst(); iter.Valid(); iter.Next() {
+				if count%maxPerSplit == 0 {
+					// Add a split every maxPerSplit keys.
+					if bytes.HasPrefix(iter.Key(), prefix) {
+						splits = append(splits, string(iter.Key()))
+					}
+				}
+				count += 1
+			}
+			_ = iter.Close()
+		}
+
+		db.Lock()
+		defer db.Unlock()
+		var memTables []*memTable
+		memTables = append(memTables, db.imm...)
+		for _, mt := range memTables {
+			mtSplits(mt)
+		}
+		mtSplits(db.mem)
+	}
+
+	sort.Strings(splits)
+
+	// Limit the maximum number of splits returned by this function. We check against
+	// maxNumberSplits * 2 so that the jump variable has a value of at least two.
+	// Otherwise, the entire list would be returned without any reduction in size.
+	if len(splits) > maxNumSplits*2 {
+		newSplits := make([]string, 0)
+		jump := len(splits) / maxNumSplits
+		if jump < 2 {
+			jump = 2
+		}
+
+		for i := 0; i < len(splits); i += jump {
+			if i >= len(splits) {
+				i = len(splits) - 1
+			}
+			newSplits = append(newSplits, splits[i])
+		}
+
+		splits = newSplits
+	}
+
+	return splits
+}
+
+// GetSampleKeys return the sample keys from db.
+// The size of those keys equal to sampleSize, if the db has enough keys. Otherwise, it contains all keys
+// and use numGoroutines goroutines to fetch those keys
+func (db *DBImpl) GetSampleKeys(sampleSize, numGoroutines int) ([][]byte, error) {
+	rangeCh := make(chan keyRange, 3)
+	keysCh := make(chan []byte, 32)
+	getRanges := func(numGoroutines int) {
+		splits := db.KeySplits(nil)
+		pickEvery := int(math.Floor(float64(len(splits)) / float64(numGoroutines)))
+		if pickEvery < 1 {
+			pickEvery = 1
+		}
+		filtered := splits[:0]
+		for i, split := range splits {
+			if (i+1)%pickEvery == 0 {
+				filtered = append(filtered, split)
+			}
+		}
+		splits = filtered
+
+		var start []byte
+		for _, key := range splits {
+			rangeCh <- keyRange{left: start, right: safeCopy(nil, []byte(key))}
+			start = safeCopy(nil, []byte(key))
+		}
+	}
+
+	iterate := func(ctx context.Context, kr keyRange) error {
+		ropt := DefaultReadOptions
+		ropt.AllVersion = true
+
+		iter, err := db.NewIterator(&ropt)
+		if err != nil {
+			return err
+		}
+
+		defer iter.Close()
+
+		sendIt := func(key []byte) error {
+			select {
+			case keysCh <- key:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			return nil
+		}
+
+		var prevKey []byte
+		it, _ := iter.(*DBIterator)
+		for it.Seek(kr.left); it.Valid(); {
+			item := it.GetItem()
+			if bytes.Equal(item.Key(), prevKey) {
+				it.Next()
+				continue
+			}
+
+			prevKey = append(prevKey[:0], item.Key()...)
+
+			// Check if we reached the end of the key range.
+			if len(kr.right) > 0 && bytes.Compare(item.Key(), kr.right) >= 0 {
+				break
+			}
+
+			if err := sendIt(item.KeyCopy(nil)); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	getKeys := func(ctx context.Context) error {
+		for {
+			select {
+			case kr, ok := <-rangeCh:
+				if !ok {
+					// Done with the keys.
+					return nil
+				}
+				if err := iterate(ctx, kr); err != nil {
+					return err
+				}
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+
+	go getRanges(numGoroutines)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var count int
+	errCh := make(chan error, numGoroutines)
+	var wg sync.WaitGroup
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if err := getKeys(ctx); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+			}
+		}()
+	}
+
+	res := [][]byte{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			key, ok := <-keysCh
+			if !ok {
+				return
+			}
+
+			res = append(res, key)
+			count++
+			if count >= sampleSize {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+	close(keysCh)
+
+	select {
+	case err := <-errCh: // Check error from getKeys.
+		return nil, err
+	default:
+	}
+
+	return res, nil
 }
 
 type EValue struct {

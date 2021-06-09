@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 )
 
 const (

@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 )
 
 const MemFileExt string = ".mem"

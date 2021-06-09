@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 )
 
 const discardFileName = "DISCARD"

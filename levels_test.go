@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 	"github.com/stretchr/testify/require"
 )
 

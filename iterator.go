@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"hash/crc32"
 
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 )
 
 type Iterator interface {

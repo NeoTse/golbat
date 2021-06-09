@@ -1,7 +1,7 @@
 package golbat
 
 import (
-	"github.com/golbat/internel"
+	"github.com/neotse/golbat/internel"
 )
 
 // DB contents are stored in a set of blocks, each of which holds a
