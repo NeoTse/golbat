@@ -266,7 +266,7 @@ func TestWriteToValueLog(t *testing.T) {
 
 		wb.Put(k, v)
 	}
-	require.NoError(t, db.Write(&DefaultWriteOptions, wb))
+	require.NoError(t, db.Write(&testWriteOptions, wb))
 
 	for i := 0; i < n; i++ {
 		res, err := db.GetExtend(&DefaultReadOptions, ([]byte(fmt.Sprintf("key%d", i))))
